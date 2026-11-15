@@ -1,0 +1,6 @@
+[package]
+name = "pachinko"
+edition = "2024"
+
+[addresses]
+pachinko = "0x0"

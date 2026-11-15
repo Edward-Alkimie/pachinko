@@ -1,0 +1,13 @@
+{
+  "name": "pachinko",
+  "private": true,
+  "type": "module",
+  "workspaces": ["physics", "frontend", "physics-service"],
+  "scripts": {
+    "dev": "npm run dev -w frontend",
+    "dev:physics-service": "npm run dev -w physics-service",
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "replay": "npm run replay -w physics-service --"
+  }
+}
