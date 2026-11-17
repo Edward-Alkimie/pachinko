@@ -23,45 +23,31 @@ npm run dev                 # frontend (code-server: http://<host>/absproxy/5180
 npm run dev:physics-service # physics service on :8100
 ```
 
-## Run (backend) — Python 3.12 via `uv`, SQLite by default
+## Start the backend
 
-First time only — create `.env` (gitignored, never commit it) with a random secret key:
+First time only (from the repo root):
 
 ```bash
-cp .env.example .env
-# Replace DJANGO_SECRET_KEY's placeholder with a fresh random key:
-KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
-sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$KEY|" .env
+~/.local/bin/uv venv --python 3.12 backend/.venv
+~/.local/bin/uv pip install --python backend/.venv -r backend/requirements.txt
+cp .env.example .env    # then set DJANGO_SECRET_KEY in .env to a long random string
 ```
 
-First time only — Python env (from the repo root):
+Every time:
 
 ```bash
 cd backend
-~/.local/bin/uv venv --python 3.12 .venv
-~/.local/bin/uv pip install --python .venv -r requirements.txt -r requirements-dev.txt
+set -a && . ../.env && set +a      # load .env
+.venv/bin/python manage.py migrate
+.venv/bin/python manage.py runserver 127.0.0.1:8000
 ```
 
-Every time — from `backend/`. `set -a` exports every variable `.env` defines; the
-`test -f` stops early with a clear message instead of a Django traceback if `.env`
-is missing:
-
-```bash
-test -f ../.env || { echo "Missing .env — see 'First time only' above"; false; } &&
-  set -a && . ../.env && set +a &&
-  .venv/bin/python manage.py migrate &&
-  .venv/bin/python manage.py runserver 127.0.0.1:8000
-```
-
-Tests: `.venv/bin/python manage.py test` (coverage: `.venv/bin/coverage run manage.py test && .venv/bin/coverage report`).
-
-PostgreSQL instead of SQLite: set `POSTGRES_HOST` (and the other `POSTGRES_*`) in `.env`,
-then `docker compose --env-file .env up -d`.
+The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 
 ## Run everything for development
 
-Two terminals: Django (above) on `:8000`, then `npm run dev` for the frontend. Vite
-forwards `<base>api/*` to Django, so sign-in works at `http://<host>/absproxy/5180/`.
+Start the backend (above) in one terminal and `npm run dev` in another, then open
+`http://<host>/absproxy/5180/`.
 
 ## Who owns what
 
