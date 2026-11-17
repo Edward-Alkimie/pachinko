@@ -160,10 +160,13 @@ Wrong status aborts with the `round` errors (§7.1).
 ### 7.3 Shared chain code (`chain/`, `@pachinko/chain`) and the deployment file
 Everything that talks to the contracts imports this package (scripts, operator, frontend, verifier).
 
-- `testnetDeployment()` reads and checks `chain/src/deployments/testnet.json`, the **current testnet deployment**:
+- **Named deployments:** each teammate has their own copy of the contracts, in `chain/src/deployments/<name>.json`:
   `{ network: "testnet", packageId, gameId, houseId, adminCapId, operatorCapId, house: { multipliersBps[],
   ballsPerRound, operatorBondMist, challengerBondMist, challengeWindowMs } }`. u64 values are decimal strings.
-  It is written by `npm run deploy:testnet` and committed. A redeploy replaces it.
+  - **Selecting:** `PACHINKO_DEPLOYMENT=<name>` in `.env` picks the file (lowercase letters, digits, dashes).
+  - **Writing:** `npm run deploy:testnet` writes it, a redeploy replaces it, and the files are committed since the ids are public.
+  - **Reading:** `parseDeployment` (browser-safe) checks the shape. In Node, `@pachinko/chain/node` has `deploymentName`,
+    `loadDeployment(name?)`, `saveDeployment` and `deploymentNames`.
 - Transaction builders return an unsigned `Transaction`: `createRoundTx`, `drawSeedTx`, `submitResultTx`, `challengeTx`,
   `resolveByAdminTx`, `finalizeTx`, `setUpHouseTx`, `fundHouseTx`. Bonds are split from gas using the deployment's amounts.
 - Reads: `fetchRound` → `RoundView` (`seed` is `null` until drawn), `fetchSubmission` → `SubmissionView` (from SUBMITTED on),

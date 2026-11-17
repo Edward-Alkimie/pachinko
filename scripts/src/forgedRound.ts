@@ -1,7 +1,7 @@
 /**
  * A forged result caught by a challenge, on Sui testnet:
  *
- *   round → seed → runRound (the true result)   [saved deployment, deploying key = admin + operator]
+ *   round → seed → runRound (the true result)   [your deployment, deploying key = admin + operator]
  *   → operator submits a forged jackpot: every ball in the best pocket, with the matching hash
  *   → challenger disputes it inside the window → admin resolves with the true outcomes
  *   → both bonds go to the challenger; the player is paid from the true result
@@ -12,7 +12,7 @@
  * testnet SUI) makes the bond transfer visible; without it the main key also challenges.
  */
 import { DEFAULT_CONFIG, hashRoundResult } from '@pachinko/physics'
-import { testnetDeployment } from '@pachinko/chain'
+import { loadDeployment } from '@pachinko/chain/node'
 import { loadEnv } from './env'
 import { challenge, resolveByAdmin, seededRound, submitResult } from './steps'
 import { connect } from './sui'
@@ -32,7 +32,7 @@ async function main() {
   console.log(`address          ${sui.address}`)
   console.log(`challenger       ${challenger.address}\n`)
 
-  const deployment = testnetDeployment()
+  const deployment = loadDeployment()
   const { round, seed, result } = await seededRound(sui, env, deployment)
   const forged = forgedJackpot(env.multipliersBps)
   const forgedHash = hashRoundResult({

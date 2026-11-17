@@ -1,9 +1,11 @@
 /**
  * The player's side only: place a bet, then follow the round until it is final. The operator
  * (`npm run operator`) does the rest: draw seed → physics → submit → finalize.
- * Usage: `npm run bet:testnet` (needs SUI_PRIVATE_KEY in .env and a running operator).
+ * Usage: `npm run bet:testnet` (needs SUI_PRIVATE_KEY + PACHINKO_DEPLOYMENT in .env and that
+ * deployment's operator running).
  */
-import { RoundStatus, fetchRound, findFinalized, testnetDeployment } from '@pachinko/chain'
+import { RoundStatus, fetchRound, findFinalized } from '@pachinko/chain'
+import { loadDeployment } from '@pachinko/chain/node'
 import { toHex } from '@mysten/sui/utils'
 import { loadEnv } from './env'
 import { createRound } from './steps'
@@ -15,7 +17,7 @@ const STATUS_NAME = ['BET_LOCKED', 'SEEDED', 'SUBMITTED', 'CHALLENGED', 'FINALIZ
 async function main() {
   const env = loadEnv()
   const sui = connect(env.grpcUrl, env.privateKey)
-  const deployment = testnetDeployment()
+  const deployment = loadDeployment()
   console.log(`player           ${sui.address}\n`)
 
   const round = await createRound(sui, env, deployment)

@@ -1,9 +1,8 @@
 /**
  * Ids and House settings of one deployment of `contracts/pachinko`. All ids are public.
  * u64 amounts are decimal strings so the shape round-trips through JSON.
- * The current testnet deployment is `deployments/testnet.json`, written by `npm run deploy:testnet`.
+ * Each teammate has their own: `deployments/<name>.json` (read and written by `./node.ts`).
  */
-import testnet from './deployments/testnet.json'
 
 export interface HouseSettings {
   /** Payout per pocket in basis points (10 000 = 1×). */
@@ -53,7 +52,5 @@ export function parseDeployment(value: unknown): Deployment {
   return d
 }
 
-/** The deployment everything uses on testnet (checked on each call). */
-export function testnetDeployment(): Deployment {
-  return parseDeployment(testnet)
-}
+/** Deployment names are file names: lowercase letters, digits and dashes (e.g. `kiana`). */
+export const DEPLOYMENT_NAME = /^[a-z0-9-]+$/

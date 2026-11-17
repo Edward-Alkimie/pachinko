@@ -24,7 +24,7 @@ npm test                    # all workspace tests
 npm run dev                 # frontend (code-server: http://<host>/absproxy/5180/)
 npm run dev:physics-service # physics service on :8100 (POST /verify)
 npm run replay -- <seed> [roundId]  # re-run one round, print outcomes + hash
-npm run deploy:testnet      # publish contracts + House once → chain/src/deployments/testnet.json (commit it)
+npm run deploy:testnet      # your own contracts + House → chain/src/deployments/<PACHINKO_DEPLOYMENT>.json (commit it)
 npm run round:testnet       # play one round on that deployment (needs SUI_PRIVATE_KEY in .env,
                             # setup: contracts/pachinko/README.md)
 npm run operator            # operator: draws seeds, runs physics, submits, finalizes (keep running)

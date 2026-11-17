@@ -156,10 +156,10 @@ Same check offline: `npm run replay -- <seed> [roundId]` prints the outcomes and
 ```
 scripts/ (deploy.ts once, then onchainRound.ts)   contracts/pachinko (Move)         events read
 ────────────────────────────────────────────   ─────────────────────────         ───────────
-deploy:testnet → chain/src/deployments/testnet.json
+deploy:testnet → chain/src/deployments/<PACHINKO_DEPLOYMENT>.json
   publish (tx.publish)               ──────▶ init: AdminCap, shared Game
   setUpHouse                         ──────▶ issue_operator_cap, create_house; fund_house
-round:testnet (reads testnet.json)
+round:testnet (reads that file)
 createRound(bet coin)                ──────▶ round::create_round      → BET_LOCKED    RoundCreated (round_id, config_version)
 drawSeed (separate tx)               ──────▶ round::draw_seed(Random) → SEEDED        SeedDrawn (seed)
 runRound(seed, round_id)  (physics/, off-chain)
@@ -287,7 +287,8 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 
 | Function | File | Input → Output | Used by | Status |
 |---|---|---|---|---|
-| `testnetDeployment` / `parseDeployment` | deployment.ts | `deployments/testnet.json` → checked `Deployment` (ids + House settings) | scripts, operator, (next) frontend | ✅ |
+| `parseDeployment` | deployment.ts | JSON → checked `Deployment` (ids + House settings) | everything | ✅ |
+| `deploymentName` / `loadDeployment` / `saveDeployment` / `deploymentNames` | node.ts (`@pachinko/chain/node`) | `PACHINKO_DEPLOYMENT` → `deployments/<name>.json` (one per teammate) | scripts, operator | ✅ |
 | `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, (next) frontend | ✅ |
 | `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` (BCS) | operator, (next) frontend | ✅ |
 | event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, operator | ✅ |
@@ -299,7 +300,7 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 
 | Function | File | Does | Status |
 |---|---|---|---|
-| `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy` once, writes `chain/src/deployments/testnet.json` | ✅ |
+| `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy`, saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` | ✅ |
 | `main` | src/bet.ts | `npm run bet:testnet`: player side only (create round, follow status, print payout); needs a running operator | ✅ |
 | `main` | src/onchainRound.ts | `npm run round:testnet`: honest round (Flow F) on the saved deployment, prints every digest | ✅ |
 | `main` / `forgedJackpot` | src/forgedRound.ts | `npm run forged:testnet`: operator forges a jackpot (matching hash) → `challenge` → `resolveByAdmin` with true outcomes | ✅ |

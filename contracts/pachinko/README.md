@@ -19,9 +19,10 @@ challenge loses its bond; wrong state / wrong time / bad input aborts; house ins
 
 ## Publish and run one round on testnet
 
-`npm run deploy:testnet` (repo root) publishes this package once, creates and funds the House,
-and saves the ids to `chain/src/deployments/testnet.json`. Commit that file, since everything else reads it.
-The deploying key holds the `AdminCap` and `OperatorCap`.
+Each teammate tests on **their own deployment** (own package, House, `AdminCap`, `OperatorCap`).
+`npm run deploy:testnet` (repo root) publishes this package, creates and funds the House, and saves
+the ids to `chain/src/deployments/<name>.json`, where `<name>` is `PACHINKO_DEPLOYMENT` in your `.env`.
+Commit your file; the ids are public. The deploying key holds that deployment's caps.
 
 `npm run round:testnet` then plays one full round on that deployment: create round (bet) →
 draw seed → `runRound` off-chain → submit result → wait out the challenge window → finalize.
@@ -46,19 +47,21 @@ transactions and controls the account's coins. Never share it or commit it.
    sui keytool export --key-identity <your address>
    ```
    Copy the `exportedPrivateKey` value. It starts with `suiprivkey1`.
-5. **Put it in `.env`** at the repo root. Make sure `.env` stays gitignored, so `git status`
-   should never list it:
+5. **Put it in `.env`** at the repo root, with your deployment name. Make sure `.env` stays
+   gitignored, so `git status` should never list it:
    ```bash
    cp .env.example .env      # if you don't have one yet
    # then edit .env:
    SUI_PRIVATE_KEY=suiprivkey1...
+   PACHINKO_DEPLOYMENT=kevin     # your name: lowercase letters, digits, dashes
    ```
+6. **Deploy your copy once:** `npm run deploy:testnet`, then commit `chain/src/deployments/<name>.json`.
 
 ### Run
 
 ```bash
 npm install               # once, from the repo root
-npm run deploy:testnet    # only when there is no deployment yet, or after contract changes
+npm run deploy:testnet    # once per person, and again after contract changes
 npm run round:testnet     # honest round: submit → window → finalize
 npm run forged:testnet    # forged jackpot → challenge → resolve_by_admin (true outcomes)
 ```
@@ -68,7 +71,7 @@ npm run forged:testnet    # forged jackpot → challenge → resolve_by_admin (t
 npm run operator          # terminal 1: draws seeds, runs physics, submits, finalizes
 npm run bet:testnet       # terminal 2: bet, then watch BET_LOCKED → SEEDED → SUBMITTED → FINALIZED
 ```
-The operator key must own the deployment's `OperatorCap` (the key that ran `deploy:testnet`).
+The operator key must own your deployment's `OperatorCap` (the key that ran `deploy:testnet`).
 Use `OPERATOR_PRIVATE_KEY` in `.env` if it differs from `SUI_PRIVATE_KEY`.
 
 `forged:testnet` can use a second address as the challenger, so the bond transfer shows up as a

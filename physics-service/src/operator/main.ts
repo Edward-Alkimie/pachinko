@@ -1,14 +1,15 @@
 /**
- * Runs the operator against the testnet deployment (chain/src/deployments/testnet.json).
- * Key: OPERATOR_PRIVATE_KEY from the repo-root .env (must own the deployment's OperatorCap),
- * or SUI_PRIVATE_KEY when unset. Usage: `npm run operator` (repo root). Stop with Ctrl+C.
+ * Runs the operator for your deployment (PACHINKO_DEPLOYMENT in the repo-root .env).
+ * Key: OPERATOR_PRIVATE_KEY (must own that deployment's OperatorCap), or SUI_PRIVATE_KEY when
+ * unset. Usage: `npm run operator` (repo root). Stop with Ctrl+C.
  */
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { ClientWithCoreApi } from '@mysten/sui/client'
 import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { TESTNET_GRPC_URL, testnetDeployment, type Deployment } from '@pachinko/chain'
+import { TESTNET_GRPC_URL, type Deployment } from '@pachinko/chain'
+import { deploymentName, loadDeployment } from '@pachinko/chain/node'
 import { DEFAULT_CONFIG, initPhysics } from '@pachinko/physics'
 import { createOperator } from './operator'
 
@@ -38,13 +39,14 @@ async function main() {
     network: 'testnet',
     baseUrl: process.env.SUI_GRPC_URL?.trim() || TESTNET_GRPC_URL,
   })
-  const deployment = testnetDeployment()
+  const name = deploymentName()
+  const deployment = loadDeployment(name)
   await assertOwnsOperatorCap(client, deployment, address)
   await initPhysics()
 
   const log = (line: string) => console.info(`${new Date().toISOString()}  ${line}`)
   const operator = createOperator({ client, signer, deployment, config: DEFAULT_CONFIG, log })
-  log(`operator ${address} on package ${deployment.packageId} (${DEFAULT_CONFIG.version})`)
+  log(`operator ${address} on deployment ${name} (${deployment.packageId}, ${DEFAULT_CONFIG.version})`)
 
   let running = true
   process.on('SIGINT', () => {

@@ -1,4 +1,4 @@
-export { TESTNET_EXPLORER_TX, TESTNET_GRPC_URL, parseDeployment, testnetDeployment } from './deployment'
+export { DEPLOYMENT_NAME, TESTNET_EXPLORER_TX, TESTNET_GRPC_URL, parseDeployment } from './deployment'
 export type { Deployment, HouseSettings } from './deployment'
 export {
   Challenged,
