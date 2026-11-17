@@ -1,5 +1,5 @@
 /**
- * Main page: Start / Replay controls, the animated board, and the result panel.
+ * Main page: on-chain play, the Replay form, the animated board, and the result panel.
  *
  * Everything shown is derived from useRound's { result, tick }:
  *   - balls on the canvas = the recorded frame for the current tick
@@ -10,10 +10,11 @@
  * need an account yet; rounds will be tied to the signed-in user later.
  *
  * OnchainPanel plays a round on Sui testnet: the wallet bets, and once the seed is
- * on-chain it is played here through the same useRound.start as a local round.
+ * on-chain it is played here with useRound.start. The Replay form re-runs any seed
+ * (e.g. an on-chain round's) the same way, so anyone can check a result.
  */
 import { useCallback } from 'react'
-import { DEFAULT_CONFIG, randomSeedHex } from '@pachinko/physics'
+import { DEFAULT_CONFIG } from '@pachinko/physics'
 import { AuthPanel } from './components/AuthPanel'
 import { OnchainPanel } from './components/OnchainPanel'
 import { ResultPanel } from './components/ResultPanel'
@@ -25,8 +26,6 @@ import { RECORD_EVERY, useRound } from './hooks/useRound'
 import './App.css'
 
 const CONFIG = DEFAULT_CONFIG
-/** Local play uses round 1 until rounds come from the backend / Sui. */
-const LOCAL_ROUND_ID = 1n
 
 function App() {
   const { state: authState, ...authActions } = useAuth()
@@ -56,13 +55,6 @@ function App() {
         <aside className="side">
           <AuthPanel state={authState} {...authActions} />
           <OnchainPanel onSeed={playSeed} />
-          <button
-            className="start"
-            onClick={() => void start(randomSeedHex(), LOCAL_ROUND_ID)}
-            disabled={isBusy}
-          >
-            {status === 'playing' ? 'Restart with new seed' : 'Start'}
-          </button>
           <ResultPanel
             config={CONFIG}
             status={status}
@@ -72,7 +64,7 @@ function App() {
             resultHash={status === 'done' ? (result?.resultHash ?? null) : null}
             error={state.error}
           />
-          <SeedInput onReplay={(seed, roundId) => void start(seed, roundId)} disabled={isBusy} />
+          <SeedInput onReplay={playSeed} disabled={isBusy} />
         </aside>
       </div>
     </main>

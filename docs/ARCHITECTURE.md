@@ -75,14 +75,14 @@ roundId (bigint) ──────────────────┼─▶
               { outcomes[], landedAtTick[], endTick, resultHash = hashRoundResult(...), frames[] }
 ```
 
-Helpers: `randomSeedHex()` (local seeds until Sui), `seedToHex()`, `SEED_BYTES`.
+Helpers: `randomSeedHex()` (a random seed for tests and tools; real rounds get theirs from Sui), `seedToHex()`, `SEED_BYTES`.
 
 ---
 
 ## 3b. Flow D: playing a round in the browser ✅
 
 ```
-Start button ─▶ randomSeedHex()            Replay form ─▶ checkSeed / checkRoundId
+OnchainPanel: seed on-chain (Flow G)       Replay form ─▶ checkSeed / checkRoundId
        └──────────────┬───────────────────────────────┘
                       ▼
           useRound.start(seedHex, roundId)
@@ -205,7 +205,7 @@ picks up where it stopped. Challenged rounds are left to the arbiter.
 | `buildDividers` | geometry.ts | config → `Box[]` | drawBoard, runRound | ✅ |
 | `pocketCentres` | geometry.ts | config → `{id,x,y}[]` | drawBoard | ✅ |
 | `parseSeed` / `seedToHex` | seed.ts | hex ⇄ 32 bytes | frontend, service, verifier | ✅ |
-| `randomSeedHex` | seed.ts | — → hex seed | frontend (until Sui) | ✅ |
+| `randomSeedHex` | seed.ts | — → hex seed | tests, tools | ✅ |
 | `encodeMessage` | seed.ts | (round, ball, event) → 13 bytes | deriveBytes | ✅ |
 | `hmacSha256` | seed.ts | (key, msg) → 32 bytes | deriveBytes | ✅ |
 | `deriveBytes` | seed.ts | (seed, round, ball, event) → 32 bytes | deriveLaunch | ✅ |
@@ -223,7 +223,7 @@ picks up where it stopped. Challenged rounds are left to the arbiter.
 
 | Function / component | File | Does | Status |
 |---|---|---|---|
-| `App` | App.tsx | AuthPanel, Start (random seed, round 1), replay form, board, results; derives balls + tally from {result, tick} | ✅ |
+| `App` | App.tsx | AuthPanel, OnchainPanel (on-chain play), replay form, board, results; derives balls + tally from {result, tick} | ✅ |
 | `PachinkoCanvas` | game/PachinkoCanvas.tsx | canvas element, DPR, calls drawBoard + drawBalls each frame | ✅ |
 | `drawBoard` / `boardPixelSize` | game/drawBoard.ts | paints the static board | ✅ |
 | `drawBalls` | game/drawBoard.ts | paints the balls of one frame on top | ✅ |

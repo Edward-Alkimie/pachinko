@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Page-level test: click Start, let the (fast-forwarded) round play out,
+ * Page-level test: replay a seed, let the (fast-forwarded) round play out,
  * and check the board is drawn and the results appear.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -45,7 +45,7 @@ describe('App', () => {
   it('draws the board on load', () => {
     const calls = stubCanvas()
     render(<App />)
-    expect(screen.getByText('Press Start to play a round.')).toBeTruthy()
+    expect(screen.getByText('Play on-chain, or replay a seed, to see a round.')).toBeTruthy()
     expect(calls.arc).toBeGreaterThan(200) // 203 pins
   })
 
@@ -55,16 +55,20 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Log in' })).toBeTruthy()
   })
 
-  it('plays a full round after Start and shows the seed and hash', async () => {
+  it('replays the SPEC golden seed to the golden hash', async () => {
     stubCanvas()
     render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Start' }))
+    const seed = '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'
+    fireEvent.change(screen.getByLabelText('Seed'), { target: { value: seed } })
+    fireEvent.change(screen.getByLabelText('Round'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Replay seed' }))
     await waitFor(() => expect(screen.getByText('Round finished.')).toBeTruthy(), {
       timeout: 30_000,
     })
     expect(document.querySelector('.landed')?.textContent).toBe('Landed 100 / 100')
     const mono = document.querySelectorAll('.round-info .mono')
-    expect(mono[0].textContent).toMatch(/^[0-9a-f]{64}$/) // seed
-    expect(mono[1].textContent).toMatch(/^[0-9a-f]{64}$/) // hash
+    expect(mono[0].textContent).toBe(seed)
+    // docs/SPEC.md §3 golden fixture
+    expect(mono[1].textContent).toBe('06e86fe4ce78394b27ef1d942c164292ce763d94aa54ca20f82ccdb24b818151')
   }, 60_000)
 })
