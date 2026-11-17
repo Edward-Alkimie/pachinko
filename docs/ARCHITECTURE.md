@@ -167,7 +167,7 @@ wait until deadline_ms
 finalize                             ──────▶ verification::finalize → pay_out → FINALIZED   Finalized (payout)
 ```
 
-Dispute path (tested in Move, not in the script): `challenge` before `deadline_ms` → CHALLENGED →
+Dispute path (Move tests + `npm run forged:testnet`): `challenge` before `deadline_ms` → CHALLENGED →
 `resolve_by_admin(correct outcomes)` → loser's bond to winner → FINALIZED. Details: `docs/CONTRACTS.md`.
 
 ---
@@ -268,7 +268,9 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 
 | Function | File | Does | Status |
 |---|---|---|---|
-| `main` + one function per step | src/onchainRound.ts | `npm run round:testnet`: Flow F end to end, prints every digest | ✅ |
+| `main` | src/onchainRound.ts | `npm run round:testnet`: honest round (Flow F) end to end, prints every digest | ✅ |
+| `main` / `forgedJackpot` | src/forgedRound.ts | `npm run forged:testnet`: operator forges a jackpot (matching hash) → `challenge` → `resolveByAdmin` with true outcomes | ✅ |
+| `deploy` / `createRound` / `drawSeed` / `seededRound` / `submitResult` / `challenge` / `resolveByAdmin` / `finalize` / `waitForDeadline` | src/steps.ts | one function per on-chain step (one tx each; `deploy` = publish + create + fund house), shared by both scripts | ✅ |
 | `connect` / `execute` | src/sui.ts | gRPC client + signer; sign, print digest, fail on abort, wait for indexing | ✅ |
 | `buildPackage` / `publishedPackageId` / `createdObjectId` / `readEvent` | src/sui.ts | compiled modules for publish; ids of created objects; decode BCS events | ✅ |
 | `loadEnv` | src/env.ts | settings from `.env` (`SUI_PRIVATE_KEY` required) | ✅ |

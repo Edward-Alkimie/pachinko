@@ -54,8 +54,13 @@ transactions and controls the account's coins. Never share it or commit it.
 
 ```bash
 npm install               # once, from the repo root
-npm run round:testnet
+npm run round:testnet     # honest round: submit → window → finalize
+npm run forged:testnet    # forged jackpot → challenge → resolve_by_admin (true outcomes)
 ```
+
+`forged:testnet` can use a second address as the challenger, so the bond transfer shows up as a
+real transfer. Repeat steps 1, 3 and 4 above for a second address (e.g. `sui client new-address ed25519`),
+then set `CHALLENGER_PRIVATE_KEY=` in `.env`. Without it, the main key also challenges.
 
 Optional settings (bet, bonds, house funds, window, multipliers) are listed in `.env.example`.
 To check a round off-chain, run `npm run replay -- <seed> <round_id>`: it prints the same

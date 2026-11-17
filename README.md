@@ -25,6 +25,7 @@ npm run dev:physics-service # physics service on :8100 (POST /verify)
 npm run replay -- <seed> [roundId]  # re-run one round, print outcomes + hash
 npm run round:testnet       # publish contracts + play one round on Sui testnet (needs SUI_PRIVATE_KEY in .env,
                             # setup: contracts/pachinko/README.md)
+npm run forged:testnet      # same, but the operator forges a jackpot and a challenge catches it
 ```
 
 ## Start the backend

@@ -10,6 +10,8 @@ const ENV_FILE = fileURLToPath(new URL('../../.env', import.meta.url))
 export interface ScriptEnv {
   /** `suiprivkey1…` (Bech32). Used as admin, operator and player in this demo. */
   readonly privateKey: string
+  /** Challenger key for `forged:testnet` (`CHALLENGER_PRIVATE_KEY`); falls back to `privateKey`. */
+  readonly challengerPrivateKey: string
   readonly grpcUrl: string
   readonly betMist: bigint
   readonly houseFundsMist: bigint
@@ -38,6 +40,7 @@ export function loadEnv(): ScriptEnv {
   }
   return {
     privateKey,
+    challengerPrivateKey: optional('CHALLENGER_PRIVATE_KEY', privateKey),
     grpcUrl: optional('SUI_GRPC_URL', 'https://fullnode.testnet.sui.io:443'),
     betMist: mist('PACHINKO_BET_MIST', '10000000'),
     houseFundsMist: mist('PACHINKO_HOUSE_FUNDS_MIST', '50000000'),

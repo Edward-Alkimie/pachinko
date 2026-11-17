@@ -140,14 +140,16 @@ the `u128` product cannot overflow.
 
 | File | Does |
 |---|---|
-| `src/onchainRound.ts` | the round, one function per step: `publish` → `setUpHouse` (create, then fund: it is shared) → `createRound` → `drawSeed` → `runRound` (physics) → `submitResult` → wait until `deadline_ms` + 3 s → `finalize` |
+| `src/onchainRound.ts` | `npm run round:testnet`: honest round. `seededRound` → `submitResult` → wait until `deadline_ms` + 3 s → `finalize` |
+| `src/forgedRound.ts` | `npm run forged:testnet`: `seededRound` → operator submits a forged jackpot (every ball in the best pocket, with the matching hash) → `challenge` (optional second key) → `resolveByAdmin` with the true outcomes |
+| `src/steps.ts` | one function per on-chain step: `deploy` (publish → create house → fund house) · `createRound` · `drawSeed` · `seededRound` (those three + `runRound`) · `submitResult` · `challenge` · `resolveByAdmin` · `finalize` · `waitForDeadline` |
 | `src/sui.ts` | `SuiGrpcClient` (testnet JSON-RPC is off), `execute` (sign, print digest + Suiscan link, fail on abort, wait for indexing), created-object and BCS-event readers, `buildPackage` (`sui move build --dump-bytecode-as-base64`) |
 | `src/env.ts` | settings from the repo-root `.env`; only `SUI_PRIVATE_KEY` is required |
 
 The script checks that the round's `config_version` equals the local physics version before it
 plays. It reads the seed and the deadline from the `SeedDrawn` and `ResultSubmitted` events.
 
-### Testnet run (2026-11-17)
+### Testnet run: honest round (2026-11-17)
 
 Package `0x66cfd09be5180747c3b9a86fa3976b1f2b746c278f9de87aeef46bdd79dc5cbd`, round object
 `0x88a8c4fef0be35eee3b8e9ac1c9f9048df871027f86545acebb9f7629283380b` (round 1, final status 4).
@@ -166,3 +168,26 @@ Package `0x66cfd09be5180747c3b9a86fa3976b1f2b746c278f9de87aeef46bdd79dc5cbd`, ro
 - Result hash: `d1d588a40a15250c4afdd054174c87f7bce72ae107455684e2e687741db759d7`. `npm run replay -- <seed> 1` gives the same hash.
 - Bet 0.01 SUI, payout 0.01 SUI (flat 1× placeholder multipliers).
 - View any digest at `https://suiscan.xyz/testnet/tx/<digest>`.
+
+### Testnet run: forged result caught (2026-11-17)
+
+Package `0x1ae062c5b55d9efff887159b7a3151279cbd1b865db978c4026a0248b9347a57`, round object
+`0xe432defe0988193e4b4ebbb5bf8f4bd596213b17fa6c9d7aee045dd8fc3d7e17` (round 1, final status 4).
+
+| Step | Digest |
+|---|---|
+| publish | `A31zLdzESY1MDok6sXyPsTcHip9a4pqZaHvEoUDjXCr6` |
+| create house | `gi1K2rvyEqZ79uGPmFWQKZBwtUZ9NBJgn2JbN8r5yvo` |
+| fund house | `9uNqWMMcJtB8kn6JrZgpRRquH5HSCNnA6wG8e6T2YzhD` |
+| create round | `5BpPAAGKw8srkRsbhGaAsMHdFAb9UUdCvZq7ch68NaVg` |
+| draw seed | `CGrpuy7wggvz9aAoUobPjacfUsm5TD35CeWLq86cWUYZ` |
+| submit (forged) | `4QKEKDBtKh2dtKbTBcvF9q9opjTZxwj2Nk8AXNErr3xx` |
+| challenge | `9Bi8YWUaCknPUgbBFLnRWDLYpoHbNkBxnauxojz9WfmL` |
+| resolve (admin) | `2sWH9XnrCdnXoC2H6Fo8TYohKHuF5qnerD518zheoo6j` |
+
+- **Forged vs true:** the operator claimed all 100 balls in pocket 0. The true physics result was pockets `13 11 16 21 18 10 11`, hash `71a11496…1ed6`.
+- **`Resolved` event:** `operator_honest = false`, and the winner (the challenger) got both bonds (0.02 SUI).
+- **Stored result:** the stored and finalized result hash is the true one.
+- **Same key both sides:** this run had no `CHALLENGER_PRIVATE_KEY`, so the challenger was the main address.
+- **Same payout:** with the flat 1× placeholder, the forged and true payouts are equal (0.01 SUI). Real multipliers make the forged claim pay more.
+

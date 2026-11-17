@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "round:testnet": "tsx src/onchainRound.ts",
+    "forged:testnet": "tsx src/forgedRound.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

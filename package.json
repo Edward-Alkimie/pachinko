@@ -9,6 +9,7 @@
     "test": "npm test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "replay": "npm run replay -w physics-service --",
-    "round:testnet": "npm run round:testnet -w scripts"
+    "round:testnet": "npm run round:testnet -w scripts",
+    "forged:testnet": "npm run forged:testnet -w scripts"
   }
 }
