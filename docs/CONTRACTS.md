@@ -133,9 +133,36 @@ the `u128` product cannot overflow.
 
 ## 8. How to run
 
-See `contracts/pachinko/README.md` (build, test, publish) and §9 for the end-to-end script.
+`contracts/pachinko/README.md` has build, test, the one-time testnet key setup (`.env`) and
+`npm run round:testnet`.
 
 ## 9. End-to-end script (`scripts/`)
 
-`npm run round:testnet` publishes the package and runs one round, printing every digest
-(details added with the script).
+| File | Does |
+|---|---|
+| `src/onchainRound.ts` | the round, one function per step: `publish` → `setUpHouse` (create, then fund: it is shared) → `createRound` → `drawSeed` → `runRound` (physics) → `submitResult` → wait until `deadline_ms` + 3 s → `finalize` |
+| `src/sui.ts` | `SuiGrpcClient` (testnet JSON-RPC is off), `execute` (sign, print digest + Suiscan link, fail on abort, wait for indexing), created-object and BCS-event readers, `buildPackage` (`sui move build --dump-bytecode-as-base64`) |
+| `src/env.ts` | settings from the repo-root `.env`; only `SUI_PRIVATE_KEY` is required |
+
+The script checks that the round's `config_version` equals the local physics version before it
+plays. It reads the seed and the deadline from the `SeedDrawn` and `ResultSubmitted` events.
+
+### Testnet run (2026-11-17)
+
+Package `0x66cfd09be5180747c3b9a86fa3976b1f2b746c278f9de87aeef46bdd79dc5cbd`, round object
+`0x88a8c4fef0be35eee3b8e9ac1c9f9048df871027f86545acebb9f7629283380b` (round 1, final status 4).
+
+| Step | Digest |
+|---|---|
+| publish | `J7LPak7x1RWG8agvS4pvfXTaRsXeSTB67iL9HjwyHnGE` |
+| create house | `Ejm6oJtrM6QAAkGk3ftVcknQ9bGPF9tv7ddtczeMAD6d` |
+| fund house | `8C1oAuaR3Zp7FCrecg9wquT861E35PpQsZcoztgypgJB` |
+| create round | `6DvVNyh7GCaqoBhzYMcU6hHeSUbRBr9A2SCSXikLAFYz` |
+| draw seed | `5QLMc74DRhZww1NjJBji9tBQv3vNeynKrY5gARgDQnoP` |
+| submit result | `UV5112TbWdDCEB13k9nbVji3DjHWRtT3qjZBPga5HzC` |
+| finalize | `3Ubwwnz5kKnSSdY6H6Hnm467N3gTz3iRnzHEA5Y7gzr3` |
+
+- Seed: `ae32903f0b9717c2b94d375c43c9e3a02baf04f5208156504a9d03b315d966c3`.
+- Result hash: `d1d588a40a15250c4afdd054174c87f7bce72ae107455684e2e687741db759d7`. `npm run replay -- <seed> 1` gives the same hash.
+- Bet 0.01 SUI, payout 0.01 SUI (flat 1× placeholder multipliers).
+- View any digest at `https://suiscan.xyz/testnet/tx/<digest>`.

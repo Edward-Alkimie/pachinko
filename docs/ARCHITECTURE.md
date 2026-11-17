@@ -151,6 +151,27 @@ Same check offline: `npm run replay -- <seed> [roundId]` prints the outcomes and
 
 ---
 
+## 4b. Flow F: one round on Sui testnet ✅ (script; backend/frontend wiring ⏳)
+
+```
+scripts/src/onchainRound.ts                 contracts/pachinko (Move)                 events read
+───────────────────────────                 ─────────────────────────                 ───────────
+publish (tx.publish)                 ──────▶ init: AdminCap, shared Game
+setUpHouse                           ──────▶ issue_operator_cap, create_house; fund_house
+createRound(bet coin)                ──────▶ round::create_round      → BET_LOCKED    RoundCreated (round_id, config_version)
+drawSeed (separate tx)               ──────▶ round::draw_seed(Random) → SEEDED        SeedDrawn (seed)
+runRound(seed, round_id)  (physics/, off-chain)
+submitResult(outcomes, hash, bond)   ──────▶ verification::submit_result → SUBMITTED  ResultSubmitted (deadline_ms)
+                                              └─ result_hash = sha2_256(SPEC §3 bytes) must match
+wait until deadline_ms
+finalize                             ──────▶ verification::finalize → pay_out → FINALIZED   Finalized (payout)
+```
+
+Dispute path (tested in Move, not in the script): `challenge` before `deadline_ms` → CHALLENGED →
+`resolve_by_admin(correct outcomes)` → loser's bond to winner → FINALIZED. Details: `docs/CONTRACTS.md`.
+
+---
+
 ## 5. Function index
 
 ### `physics/` (shared)
@@ -225,7 +246,7 @@ Same check offline: `npm run replay -- <seed> [roundId]` prints the outcomes and
 Ownership: Kevin keeps to `apps/users` and `apps/rounds`; Kiana owns anything under
 `apps/verification` and `/api/verification/`. `apps/results` is shared — agree on changes first.
 
-### `contracts/pachinko/` (Sui Move) 🚧
+### `contracts/pachinko/` (Sui Move) ✅
 Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §7.
 
 | Function | Module | Does | Owner | Status |
@@ -242,6 +263,15 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | `pay_out` | verification | placeholder payout rule (one function) | Kiana | ✅ |
 | `result_hash` | verification | SPEC §3 bytes → `sha2_256` (same as `hashRoundResult`) | Kiana | ✅ |
 | `submitted_hash` / `treasury_value` | verification | reads: stored result hash, house balance | Kiana | ✅ |
+
+### `scripts/` (testnet tooling)
+
+| Function | File | Does | Status |
+|---|---|---|---|
+| `main` + one function per step | src/onchainRound.ts | `npm run round:testnet`: Flow F end to end, prints every digest | ✅ |
+| `connect` / `execute` | src/sui.ts | gRPC client + signer; sign, print digest, fail on abort, wait for indexing | ✅ |
+| `buildPackage` / `publishedPackageId` / `createdObjectId` / `readEvent` | src/sui.ts | compiled modules for publish; ids of created objects; decode BCS events | ✅ |
+| `loadEnv` | src/env.ts | settings from `.env` (`SUI_PRIVATE_KEY` required) | ✅ |
 
 ---
 

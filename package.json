@@ -2,12 +2,13 @@
   "name": "pachinko",
   "private": true,
   "type": "module",
-  "workspaces": ["physics", "frontend", "physics-service"],
+  "workspaces": ["physics", "frontend", "physics-service", "scripts"],
   "scripts": {
     "dev": "npm run dev -w frontend",
     "dev:physics-service": "npm run dev -w physics-service",
     "test": "npm test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "replay": "npm run replay -w physics-service --"
+    "replay": "npm run replay -w physics-service --",
+    "round:testnet": "npm run round:testnet -w scripts"
   }
 }

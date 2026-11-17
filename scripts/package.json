@@ -1,0 +1,19 @@
+{
+  "name": "@pachinko/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "round:testnet": "tsx src/onchainRound.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mysten/sui": "2.39.1",
+    "@pachinko/physics": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.8.3"
+  }
+}

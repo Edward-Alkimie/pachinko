@@ -4,6 +4,8 @@ Sui Move 2024 package for one on-chain round. Modules: `round` (bet + seed), `ve
 (result, challenge, payout). Design, state machine and open decisions: `docs/CONTRACTS.md`.
 Shared interface: `docs/SPEC.md` §7.
 
+## Build and test
+
 Needs the Sui CLI (`sui --version`). Run from this folder:
 
 ```bash
@@ -14,3 +16,48 @@ sui move test --lint       # unit tests (test_scenario)
 Tests (`tests/`): `round_tests` (bet, seed, config version), `verification_tests` (result hash
 equals the physics golden fixture; honest round; forged result caught by a challenge; false
 challenge loses its bond; wrong state / wrong time / bad input aborts; house insolvency).
+
+## Publish and run one round on testnet
+
+`npm run round:testnet` (repo root) publishes this package and plays one full round:
+publish → create + fund house → create round (bet) → draw seed → `runRound` off-chain →
+submit result → wait out the challenge window → finalize. It prints every transaction digest
+with a Suiscan link. One key acts as admin, operator and player.
+
+### One-time setup: a testnet key in `.env`
+
+A Sui account is a key pair. The **address** (`0x…`) is public. The **private key** signs
+transactions and controls the account's coins. Never share it or commit it.
+
+1. **Have a Sui CLI address.** `sui client active-address` prints it. On a fresh install,
+   `sui client` asks to create a config: choose testnet and an `ed25519` key. To get a separate
+   key just for this project, run `sui client new-address ed25519`.
+2. **Use testnet:** `sui client switch --env testnet` (`sui client envs` shows the active one).
+3. **Get free test SUI** (one run uses about 0.1 SUI; the bond comes back):
+   `sui client faucet`, or paste your address into https://faucet.sui.io.
+   Check with `sui client balance`.
+4. **Export the private key.** This only reads your local keystore
+   (`~/.sui/sui_config/sui.keystore`) and sends nothing:
+   ```bash
+   sui keytool export --key-identity <your address>
+   ```
+   Copy the `exportedPrivateKey` value. It starts with `suiprivkey1`.
+5. **Put it in `.env`** at the repo root. Make sure `.env` stays gitignored, so `git status`
+   should never list it:
+   ```bash
+   cp .env.example .env      # if you don't have one yet
+   # then edit .env:
+   SUI_PRIVATE_KEY=suiprivkey1...
+   ```
+
+### Run
+
+```bash
+npm install               # once, from the repo root
+npm run round:testnet
+```
+
+Optional settings (bet, bonds, house funds, window, multipliers) are listed in `.env.example`.
+To check a round off-chain, run `npm run replay -- <seed> <round_id>`: it prints the same
+`resultHash` the contract accepted. Open any digest on https://suiscan.xyz/testnet to see its
+events and objects.
