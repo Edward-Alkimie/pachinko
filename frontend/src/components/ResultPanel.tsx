@@ -14,7 +14,7 @@ interface Props {
 }
 
 const STATUS_TEXT: Record<RoundStatus, string> = {
-  idle: 'Press Start to play a round.',
+  idle: 'Play on-chain, or replay a seed, to see a round.',
   simulating: 'Simulating…',
   playing: 'Playing…',
   done: 'Round finished.',

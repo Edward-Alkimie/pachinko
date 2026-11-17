@@ -85,3 +85,93 @@ service's · 413 body over 16 KiB · 404 other routes · 500 `{error: "internal 
 Replay CLI: `npm run replay -- <seed> [roundId]` prints end tick, `resultHash`, pocket
 tally and outcomes for one round (exit code 2 on bad arguments).
 
+
+## 7. On-chain round (`contracts/pachinko`, v0)
+Sui testnet, Move 2024. Design and open decisions: `docs/CONTRACTS.md`.
+
+### 7.1 `round` module
+`Round` (shared object, one per round):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `round_id` | `u64` | Sequential from 1 per published package (`Game.next_round_id`). Used as `round_id` in §2 and §3 |
+| `player` | `address` | Placed the bet; receives the payout |
+| `config_version` | `String` | Physics version the result must use (copied from `Game` at creation; starts `pachinko-v0.1.0`) |
+| `seed` | `vector<u8>` | Empty until drawn, then 32 bytes from `sui::random` (the §2 seed) |
+| `bet` | `Balance<SUI>` | Locked until finalized |
+| `status` | `u8` | `0` BET_LOCKED · `1` SEEDED · `2` SUBMITTED · `3` CHALLENGED · `4` FINALIZED |
+
+Entry functions:
+```move
+public fun create_round(game: &mut Game, bet: Coin<SUI>, ctx: &mut TxContext)       // → BET_LOCKED
+entry fun draw_seed(round: &mut Round, r: &Random, ctx: &mut TxContext)              // BET_LOCKED → SEEDED (separate tx)
+public fun set_config_version(_: &AdminCap, game: &mut Game, version: String)
+```
+Events:
+```move
+RoundCreated { round: ID, round_id: u64, player: address, bet: u64, config_version: String }
+SeedDrawn    { round: ID, round_id: u64, seed: vector<u8> }
+```
+Aborts: `EZeroBet` (0), `ESeedAlreadyDrawn` (1); transitions used by `verification`:
+`ENotSeeded` (2), `ENotSubmitted` (3), `ENotChallenged` (4).
+
+### 7.2 `verification` module
+Outcomes on-chain are `vector<u16>`, one per ball; `0xFFFF` = `-1` (never landed). These are the
+§3 `i16 BE` bytes, so `verification::result_hash` equals `hashRoundResult` (tested against the §3 golden fixture).
+
+`House` (shared, created by admin): `treasury: Balance<SUI>`, `multipliers_bps: vector<u64>` (one per
+pocket, 10 000 = 1×, max 100×), `balls_per_round`, `operator_bond`, `challenger_bond`, `challenge_window_ms`.
+
+`Submission` (dynamic field on `Round`, key `SubmissionKey()`; kept after settlement as the final result):
+`house: ID`, `operator: address`, `outcomes: vector<u16>`, `result_hash: vector<u8>`, `deadline_ms: u64`,
+`operator_bond`, `challenger: Option<address>`, `challenger_bond`.
+
+Entry functions:
+```move
+public fun submit_result(_: &OperatorCap, round: &mut Round, house: &House, outcomes: vector<u16>,
+    result_hash: vector<u8>, bond: Coin<SUI>, clock: &Clock, ctx: &mut TxContext)       // SEEDED → SUBMITTED
+public fun challenge(round: &mut Round, house: &House, bond: Coin<SUI>, clock: &Clock,
+    ctx: &mut TxContext)                                                                 // SUBMITTED → CHALLENGED, now < deadline_ms
+public fun finalize(round: &mut Round, house: &mut House, clock: &Clock, ctx: &mut TxContext)
+                                                                                         // SUBMITTED → FINALIZED, now ≥ deadline_ms
+public fun resolve_by_admin(_: &AdminCap, round: &mut Round, house: &mut House,
+    correct_outcomes: vector<u16>, ctx: &mut TxContext)                                 // CHALLENGED → FINALIZED
+public fun result_hash(config_version: &String, seed: &vector<u8>, round_id: u64, outcomes: &vector<u16>): vector<u8>
+```
+Admin: `issue_operator_cap(&AdminCap, recipient, ctx)`, `create_house(&AdminCap, multipliers_bps,
+balls_per_round, operator_bond, challenger_bond, challenge_window_ms, ctx)`,
+`withdraw_house(&AdminCap, house, amount, ctx): Coin<SUI>`. Anyone: `fund_house(house, Coin<SUI>)`.
+
+Verdict: `operator_honest = (submitted result_hash == result_hash(correct_outcomes))`. Winner gets both bonds.
+
+Payout (placeholder): `payout = bet × Σ multipliers_bps[outcome] / (ball_count × 10 000)`, `0xFFFF` pays 0.
+
+Events:
+```move
+ResultSubmitted { round: ID, round_id: u64, operator: address, outcomes: vector<u16>, result_hash: vector<u8>, bond: u64, deadline_ms: u64 }
+Challenged      { round: ID, round_id: u64, challenger: address, bond: u64 }
+Resolved        { round: ID, round_id: u64, operator_honest: bool, winner: address, award: u64, result_hash: vector<u8> }
+Finalized       { round: ID, round_id: u64, player: address, payout: u64, result_hash: vector<u8> }
+```
+Aborts: `EInvalidHouseConfig` (0), `EWrongBallCount` (1), `EInvalidOutcome` (2), `EHashMismatch` (3),
+`EWrongBond` (4), `EWrongHouse` (5), `EWindowClosed` (6), `EWindowOpen` (7), `EHouseInsolvent` (8).
+Wrong status aborts with the `round` errors (§7.1).
+
+### 7.3 Shared chain code (`chain/`, `@pachinko/chain`) and the deployment file
+Everything that talks to the contracts imports this package (scripts, operator, frontend, verifier).
+
+- **Named deployments:** each teammate has their own copy of the contracts, in `chain/src/deployments/<name>.json`:
+  `{ network: "testnet", packageId, gameId, houseId, adminCapId, operatorCapId, house: { multipliersBps[],
+  ballsPerRound, operatorBondMist, challengerBondMist, challengeWindowMs } }`. u64 values are decimal strings.
+  - **Selecting:** `PACHINKO_DEPLOYMENT=<name>` in `.env` picks the file (lowercase letters, digits, dashes).
+  - **Writing:** `npm run deploy:testnet` writes it, a redeploy replaces it, and the files are committed since the ids are public.
+  - **Frontend:** `VITE_PACHINKO_DEPLOYMENT=<name>` (same file, read through a Vite glob).
+  - **Reading:** `parseDeployment` (browser-safe) checks the shape. In Node, `@pachinko/chain/node` has `deploymentName`,
+    `loadDeployment(name?)`, `saveDeployment` and `deploymentNames`.
+- Transaction builders return an unsigned `Transaction`: `createRoundTx`, `drawSeedTx`, `submitResultTx`, `challengeTx`,
+  `resolveByAdminTx`, `finalizeTx`, `setUpHouseTx`, `fundHouseTx`. Bonds are split from gas using the deployment's amounts.
+- Reads: `fetchRound` → `RoundView` (`seed` is `null` until drawn), `fetchSubmission` → `SubmissionView` (from SUBMITTED on),
+  `RoundStatus` (§7.1 values). Events: BCS layouts + `eventType(packageId, name)`.
+- Outcomes: `toOnchainOutcomes` / `fromOnchainOutcomes` (`-1` ↔ `0xFFFF`).
+- Server side: `signAndExecute(client, signer, tx)` (throws on abort, waits for indexing), `readEvent`.
+  `findFinalized(client, packageId, roundObjectId)` → the round's `Finalized` event (payout), or `null`.

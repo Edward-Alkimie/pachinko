@@ -3,7 +3,7 @@
  *
  * The physics runs ahead of time (runRound), recording ball positions every
  * `recordEvery` ticks. Playback only has to answer "what does the board look
- * like N milliseconds after Start?", which these functions compute.
+ * like N milliseconds after playback started?", which these functions compute.
  * They have no React or canvas code, so they're easy to test.
  */
 

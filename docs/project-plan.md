@@ -155,9 +155,9 @@ Move notes: the function that uses `Random` must be a **non-public `entry`** fun
 |---|---|---|---|
 | 0: Spec | Nov 10–12 | Agree on config format, seed bytes, `runRound` output, Round object/events, Move package layout | `docs/SPEC.md` agreed by both |
 | 1: Foundations | Nov 10–16 | Kevin: 100-ball round + determinism test. Kiana: Move basics, verifier skeleton with fake `runRound` | Determinism passes; verifier compares fake results on testnet |
-| 2: One full round | Nov 14–20 | `round` module + physics-service submit + first game view; honest flow on testnet | Bet → seed → compute → submit → challenge window → payout works end to end |
+| 2: One full round | Nov 14–20 | `round` module + physics-service submit + first game view; honest flow on testnet | Bet → seed → compute → submit → challenge window → payout works end to end. ✅ Contracts + `npm run round:testnet` (Nov 17, see `docs/CONTRACTS.md` §9); ✅ operator in physics-service (`npm run operator`: seed → physics → submit → finalize); ✅ game view plays on-chain rounds (wallet bet → operator → payout, Nov 17) |
 | — | **Nov 18** | **Scoped plan due**, with determinism results and flow progress | |
-| 3: Verification | Nov 19–27 | Challenges with bond, timeout fallback submit, admin then 2-of-3 committee arbitration, cheat scripts. Real physics in verifier (~Nov 20) | Demos pass: honest round, forged jackpot caught, server offline handled |
+| 3: Verification | Nov 19–27 | Challenges with bond, timeout fallback submit, admin then 2-of-3 committee arbitration, cheat scripts. Real physics in verifier (~Nov 20) | Demos pass: honest round, forged jackpot caught, server offline handled. ✅ Bonded challenge + admin arbitration in Move (unit-tested), forged jackpot caught on testnet (`npm run forged:testnet`); ⏳ timeout, committee, cheat scripts |
 | 4: Odds & Verify page | Nov 25–30 | Offline sims (probability and RTP per pocket), Verify page, payout cap, pool rules, minimal Django history | Odds published; any round verifiable on the Verify page |
 | 5: Polish & demo | Dec 1–6 | Final determinism re-run, 2+ demo rehearsals, report | Demo ready (Dec 6 is buffer) |
 

@@ -11,7 +11,9 @@ Physics-decided, replay-verifiable pachinko. See `docs/` for the spec and plan.
 | `physics-service/` | Backend copy of the physics: re-runs a seed, checks each ball's outcome | Node, TypeScript |
 | `backend/` | Rounds, seeds, result storage, API | Django, DRF |
 | `database/` | PostgreSQL setup notes and init scripts | PostgreSQL |
-| `contracts/` | Sui Move package (later) | Move |
+| `contracts/` | Sui Move package: `round` (bet + seed), `verification` (submit, challenge, payout) | Move (Sui testnet) |
+| `chain/` | Shared Sui code: transaction builders, event/object readers, current testnet deployment ids | TypeScript, Sui TS SDK |
+| `scripts/` | Testnet tooling: deploy once, play one full on-chain round | TypeScript, Sui TS SDK |
 | `docs/` | Spec and project plan | Markdown |
 
 ## Run (Node parts)
@@ -22,6 +24,13 @@ npm test                    # all workspace tests
 npm run dev                 # frontend (code-server: http://<host>/absproxy/5180/)
 npm run dev:physics-service # physics service on :8100 (POST /verify)
 npm run replay -- <seed> [roundId]  # re-run one round, print outcomes + hash
+npm run deploy:testnet      # your own contracts + House → chain/src/deployments/<PACHINKO_DEPLOYMENT>.json (commit it)
+npm run round:testnet       # play one round on that deployment (needs SUI_PRIVATE_KEY in .env,
+                            # setup: contracts/pachinko/README.md)
+npm run operator            # operator: draws seeds, runs physics, submits, finalizes (keep running)
+npm run bet:testnet         # player side only: bet, then follow the round (needs the operator)
+                            # in the browser: "Play on-chain" (needs VITE_PACHINKO_DEPLOYMENT + a Sui wallet)
+npm run forged:testnet      # same, but the operator forges a jackpot and a challenge catches it
 ```
 
 ## Start the backend

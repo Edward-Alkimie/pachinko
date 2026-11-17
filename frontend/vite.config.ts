@@ -17,6 +17,9 @@ export default defineConfig(({ command }) => {
   return {
     plugins: [react()],
     base,
+    // Read the repo-root .env (one file for the whole project). Only VITE_* values reach the page,
+    // so keys like SUI_PRIVATE_KEY stay server-side. Used for VITE_PACHINKO_DEPLOYMENT.
+    envDir: '..',
     server: {
       // 127.0.0.1 (IPv4) so code-server's proxy can reach it; still not exposed to the network
       host: '127.0.0.1',
