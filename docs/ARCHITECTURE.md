@@ -225,8 +225,16 @@ Same check offline: `npm run replay -- <seed> [roundId]` prints the outcomes and
 Ownership: Kevin keeps to `apps/users` and `apps/rounds`; Kiana owns anything under
 `apps/verification` and `/api/verification/`. `apps/results` is shared — agree on changes first.
 
-### `contracts/` ⏳
-Move `round.move` (Kevin, seed via `sui::random`), `verification.move` (Kiana).
+### `contracts/pachinko/` (Sui Move) 🚧
+Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §7.
+
+| Function | Module | Does | Owner | Status |
+|---|---|---|---|---|
+| `create_round` | round | lock bet in a new shared `Round` (→ BET_LOCKED), emit `RoundCreated` | Kevin | ✅ |
+| `draw_seed` | round | non-public `entry`; 32 bytes from `sui::random` (→ SEEDED), emit `SeedDrawn` | Kevin | ✅ |
+| `set_config_version` | round | admin: physics version for new rounds | Kevin | ✅ |
+| `mark_submitted` / `mark_challenged` / `finalize_unchallenged` / `finalize_disputed` | round | `public(package)` status transitions used by `verification` | Kevin | ✅ |
+| `submit_result` / `challenge` / `resolve_by_admin` / `finalize` | verification | result + hash check, challenge window, arbitration, payout | Kiana | ⏳ |
 
 ---
 

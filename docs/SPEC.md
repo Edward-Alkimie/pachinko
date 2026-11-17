@@ -85,3 +85,32 @@ service's · 413 body over 16 KiB · 404 other routes · 500 `{error: "internal 
 Replay CLI: `npm run replay -- <seed> [roundId]` prints end tick, `resultHash`, pocket
 tally and outcomes for one round (exit code 2 on bad arguments).
 
+
+## 7. On-chain round (`contracts/pachinko`, v0)
+Sui testnet, Move 2024. Design and open decisions: `docs/CONTRACTS.md`.
+
+### 7.1 `round` module
+`Round` (shared object, one per round):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `round_id` | `u64` | Sequential from 1 per published package (`Game.next_round_id`). Used as `round_id` in §2 and §3 |
+| `player` | `address` | Placed the bet; receives the payout |
+| `config_version` | `String` | Physics version the result must use (copied from `Game` at creation; starts `pachinko-v0.1.0`) |
+| `seed` | `vector<u8>` | Empty until drawn, then 32 bytes from `sui::random` (the §2 seed) |
+| `bet` | `Balance<SUI>` | Locked until finalized |
+| `status` | `u8` | `0` BET_LOCKED · `1` SEEDED · `2` SUBMITTED · `3` CHALLENGED · `4` FINALIZED |
+
+Entry functions:
+```move
+public fun create_round(game: &mut Game, bet: Coin<SUI>, ctx: &mut TxContext)       // → BET_LOCKED
+entry fun draw_seed(round: &mut Round, r: &Random, ctx: &mut TxContext)              // BET_LOCKED → SEEDED (separate tx)
+public fun set_config_version(_: &AdminCap, game: &mut Game, version: String)
+```
+Events:
+```move
+RoundCreated { round: ID, round_id: u64, player: address, bet: u64, config_version: String }
+SeedDrawn    { round: ID, round_id: u64, seed: vector<u8> }
+```
+Aborts: `EZeroBet` (0), `ESeedAlreadyDrawn` (1); transitions used by `verification`:
+`ENotSeeded` (2), `ENotSubmitted` (3), `ENotChallenged` (4).
