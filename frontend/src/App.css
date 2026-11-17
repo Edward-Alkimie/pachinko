@@ -65,3 +65,23 @@ button.start:hover:not(:disabled) { background: #d09d36; }
 }
 .seed-input button { grid-column: 1 / -1; }
 .seed-input .error { grid-column: 1 / -1; margin: 0; color: #e06c75; font-size: 0.85rem; }
+
+/* Sign-in box (AuthPanel): same card look as the replay form */
+.auth-panel { display: grid; gap: 8px; background: #18202e; border-radius: 8px; padding: 16px; font-size: 0.9rem; }
+.auth-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: #8a94a6; }
+.auth-panel input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #3a4558;
+  background: #0b0f17;
+  color: #e6e9ef;
+  min-width: 0;
+}
+.auth-panel.signed-in { grid-template-columns: 1fr auto; align-items: center; }
+.auth-panel strong { color: #e5c07b; }
+.auth-panel .error, .auth-panel .field-error { margin: 0; color: #e06c75; font-size: 0.85rem; }
+/* Mode toggle: a quiet text button, not a second primary action */
+.auth-panel button.link { background: none; border: none; padding: 0; color: #8a94a6; text-decoration: underline; justify-self: start; }
+.auth-panel button.link:hover:not(:disabled) { background: none; color: #e6e9ef; }

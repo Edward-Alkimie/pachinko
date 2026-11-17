@@ -97,6 +97,36 @@ Start button ─▶ randomSeedHex()            Replay form ─▶ checkSeed / ch
           status == done ─▶ show resultHash
 ```
 
+## 3c. Flow E: accounts (backend) ✅
+
+```
+frontend                                     Vite dev proxy           backend/apps/users
+App ─ useAuth() ─▶ services/auth.ts ──▶ <base>api/* ──▶ :8000/api/* (Django + DRF, session cookie)
+        │            fetchMe / login / register / logout   (sets Origin = backend)
+        └▶ <AuthPanel state + actions>: form when signed out, "Signed in as …" when signed in
+
+calls                                        backend view
+GET  /api/auth/csrf      ──────────▶ CsrfView      sets csrftoken cookie
+POST /api/auth/register  ──────────▶ RegisterView  RegisterSerializer → validate_password → create_user → login
+POST /api/auth/login     ──────────▶ LoginView     authenticate → login   (bad user/password: same 400)
+POST /api/auth/logout    ──────────▶ LogoutView    204
+GET  /api/auth/me        ──────────▶ MeView        { id, username }  (403 when logged out)
+```
+
+- Writes send header `X-CSRFToken: <csrftoken cookie>`. Register/login are CSRF-checked
+  and rate-limited per client IP (`AUTH_THROTTLE_RATE`, default `10/min`, scope `auth`;
+  `DJANGO_NUM_PROXIES` = trusted proxies, 0 ignores `X-Forwarded-For`).
+- Usernames are Unicode-normalized (NFKC) before the uniqueness check and on login.
+- Passwords: Django hashing + the 4 standard password validators. Responses never include them.
+- Database: SQLite (`backend/db.sqlite3`) unless `POSTGRES_HOST` is set, then PostgreSQL.
+- `services/auth.ts` adds `X-CSRFToken` from the cookie on every POST (gets the cookie from
+  `/auth/csrf` first if missing); backend errors become `ApiError {status, message, fieldErrors}`.
+- Playing a round does not need an account yet.
+- Contract for other code: `docs/SPEC.md` §5.
+- Not yet: Sui wallet link / balance. Note for later: JSON-RPC is **off** on public testnet
+  full nodes (checked 2026-11-17); use GraphQL `https://graphql.testnet.sui.io/graphql`
+  (`address(address){ balance(coinType:"0x2::sui::SUI"){ totalBalance } }`) or gRPC.
+
 ## 4. Flow C: playing and verifying a round ⏳ (steps 5–7)
 
 ```
@@ -149,7 +179,7 @@ Server outcome wins on any mismatch.
 
 | Function / component | File | Does | Status |
 |---|---|---|---|
-| `App` | App.tsx | Start (random seed, round 1), replay form, board, results; derives balls + tally from {result, tick} | ✅ |
+| `App` | App.tsx | AuthPanel, Start (random seed, round 1), replay form, board, results; derives balls + tally from {result, tick} | ✅ |
 | `PachinkoCanvas` | game/PachinkoCanvas.tsx | canvas element, DPR, calls drawBoard + drawBalls each frame | ✅ |
 | `drawBoard` / `boardPixelSize` | game/drawBoard.ts | paints the static board | ✅ |
 | `drawBalls` | game/drawBoard.ts | paints the balls of one frame on top | ✅ |
@@ -158,7 +188,11 @@ Server outcome wins on any mismatch.
 | `ResultPanel` | components/ResultPanel.tsx | status, landed count, tally bars, round, seed, hash | ✅ |
 | `SeedInput` | components/SeedInput.tsx | replay form; validates with `checkSeed` / `checkRoundId` (lib/validation.ts) | ✅ |
 | `BOARD_COLORS` | game/theme.ts | colours | ✅ |
-| `API_URL` | services/api.ts | backend base URL | ✅ (unused yet) |
+| `API_URL` | services/api.ts | backend base URL: `<base>api` (Vite proxy) unless `VITE_API_URL` | ✅ |
+| `fetchMe` / `login` / `register` / `logout` | services/auth.ts | accounts API calls; CSRF header; `ApiError` | ✅ |
+| `readCookie` / `ApiError` | services/auth.ts | cookie lookup; failed request (status 0 = unreachable) | ✅ |
+| `useAuth` | hooks/useAuth.ts | sign-in state: loading → anonymous / authenticated; login, register, logout, clearError | ✅ |
+| `AuthPanel` | components/AuthPanel.tsx | login/register form (two modes) or "Signed in as …" + Log out | ✅ |
 
 ### `physics-service/`
 
@@ -168,9 +202,22 @@ Server outcome wins on any mismatch.
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
 | replay CLI | src/cli.ts | `npm run replay -- <seed>` | ⏳ |
 
-### `backend/` and `contracts/` ⏳
-Django apps `rounds` (create round + seed), `results` (store outcomes, call `/verify` via
-`physics_client.py`). Move `round.move` (seed via `sui::random`).
+### `backend/` (Django)
+
+| Function / view | File | Does | Owner | Status |
+|---|---|---|---|---|
+| `User` | apps/users/models.py | custom user (AbstractUser; extra fields go here later) | Kevin | ✅ |
+| `RegisterSerializer` / `LoginSerializer` / `UserSerializer` | apps/users/serializers.py | request/response shapes; password write-only | Kevin | ✅ |
+| `CsrfView` `RegisterView` `LoginView` `LogoutView` `MeView` | apps/users/views.py | `/api/auth/*` (Flow E) | Kevin | ✅ |
+| rounds API | apps/rounds/ | create round + seed | Kevin | ⏳ |
+| results API + `physics_client.py` | apps/results/ | store outcomes, call physics-service `/verify` | shared | ⏳ |
+| verification API | `apps/verification/` (not created) | challenges, arbitration, payout status — URL prefix `/api/verification/` reserved | **Kiana** | ⏳ |
+
+Ownership: Kevin keeps to `apps/users` and `apps/rounds`; Kiana owns anything under
+`apps/verification` and `/api/verification/`. `apps/results` is shared — agree on changes first.
+
+### `contracts/` ⏳
+Move `round.move` (Kevin, seed via `sui::random`), `verification.move` (Kiana).
 
 ---
 

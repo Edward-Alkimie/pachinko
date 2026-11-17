@@ -22,6 +22,11 @@ function stubCanvas() {
 }
 
 beforeEach(() => {
+  // No backend in tests: every API call answers "not signed in" (403).
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({ ok: false, status: 403, json: async () => ({ detail: 'Not signed in.' }) })),
+  )
   let now = 0
   vi.spyOn(performance, 'now').mockImplementation(() => now)
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) =>
@@ -42,6 +47,12 @@ describe('App', () => {
     render(<App />)
     expect(screen.getByText('Press Start to play a round.')).toBeTruthy()
     expect(calls.arc).toBeGreaterThan(200) // 203 pins
+  })
+
+  it('shows the sign-in form once the session check says signed out', async () => {
+    stubCanvas()
+    render(<App />)
+    expect(await screen.findByRole('button', { name: 'Log in' })).toBeTruthy()
   })
 
   it('plays a full round after Start and shows the seed and hash', async () => {

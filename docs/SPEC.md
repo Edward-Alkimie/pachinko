@@ -38,3 +38,21 @@ Shared contract between frontend, physics-service, backend and verifier.
 ## 4. Backend check
 Backend re-runs `runRound(seed)` with the same physics version and compares each
 ball's outcome. Backend outcome is authoritative on mismatch.
+
+## 5. Accounts API (`backend/apps/users`, v0)
+Base path `/api/auth/`. Session-cookie auth. JSON in and out.
+
+| Method + path | Body | Success | Errors |
+|---|---|---|---|
+| `GET csrf` | — | 200, sets `csrftoken` cookie | — |
+| `POST register` | `{username, password}` | 201 `{id, username}`, signed in | 400 `{username: [..]}` / `{password: [..]}`, 429 |
+| `POST login` | `{username, password}` | 200 `{id, username}` | 400 `{detail}` (same for bad user or bad password), 429 |
+| `POST logout` | — | 204 | — |
+| `GET me` | — | 200 `{id, username}` | 403 when signed out |
+
+- Every POST needs header `X-CSRFToken` = value of the `csrftoken` cookie (403 otherwise).
+- Usernames: Django rules (≤ 150 chars, letters/digits/`@.+-_`), NFKC-normalized.
+- Passwords: Django's 4 standard validators (length ≥ 8, not common, not all digits,
+  not like the username). Never returned.
+- Rate limit on register + login: `AUTH_THROTTLE_RATE` (default `10/min`) per client IP.
+- Other apps (rounds, verification) use the same session: `request.user` is the account.
