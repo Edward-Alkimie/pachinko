@@ -1,12 +1,14 @@
 /**
  * One honest pachinko round on Sui testnet:
  *
- *   publish → create + fund house → create round (bet locked) → draw seed (sui::random)
- *   → runRound off-chain → submit result (hash checked on-chain) → wait out the window → finalize
+ *   create round (bet locked) → draw seed (sui::random) → runRound off-chain
+ *   → submit result (hash checked on-chain) → wait out the window → finalize
  *
- * Prints every transaction digest with an explorer link. One key plays admin, operator and player.
+ * Uses the saved testnet deployment (`npm run deploy:testnet` first). Prints every digest.
+ * The key plays player and operator, so it must be the deploying key (it holds the OperatorCap).
  * Usage: `npm run round:testnet` (needs SUI_PRIVATE_KEY in .env). Contract: docs/SPEC.md §7.
  */
+import { testnetDeployment } from '@pachinko/chain'
 import { loadEnv } from './env'
 import { seededRound, submitResult, waitForDeadline, finalize } from './steps'
 import { connect } from './sui'
@@ -16,8 +18,9 @@ async function main() {
   const sui = connect(env.grpcUrl, env.privateKey)
   console.log(`address          ${sui.address}\n`)
 
-  const { deployment, round, result } = await seededRound(sui, env)
-  const deadlineMs = await submitResult(sui, env, deployment, round, result.outcomes, result.resultHash)
+  const deployment = testnetDeployment()
+  const { round, result } = await seededRound(sui, env, deployment)
+  const deadlineMs = await submitResult(sui, deployment, round, result.outcomes, result.resultHash)
   await waitForDeadline(deadlineMs)
   const payout = await finalize(sui, deployment, round)
 

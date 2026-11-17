@@ -19,10 +19,14 @@ challenge loses its bond; wrong state / wrong time / bad input aborts; house ins
 
 ## Publish and run one round on testnet
 
-`npm run round:testnet` (repo root) publishes this package and plays one full round:
-publish → create + fund house → create round (bet) → draw seed → `runRound` off-chain →
-submit result → wait out the challenge window → finalize. It prints every transaction digest
-with a Suiscan link. One key acts as admin, operator and player.
+`npm run deploy:testnet` (repo root) publishes this package once, creates and funds the House,
+and saves the ids to `chain/src/deployments/testnet.json`. Commit that file, since everything else reads it.
+The deploying key holds the `AdminCap` and `OperatorCap`.
+
+`npm run round:testnet` then plays one full round on that deployment: create round (bet) →
+draw seed → `runRound` off-chain → submit result → wait out the challenge window → finalize.
+It prints every transaction digest with a Suiscan link. It acts as player and operator, so run
+it with the deploying key.
 
 ### One-time setup: a testnet key in `.env`
 
@@ -54,6 +58,7 @@ transactions and controls the account's coins. Never share it or commit it.
 
 ```bash
 npm install               # once, from the repo root
+npm run deploy:testnet    # only when there is no deployment yet, or after contract changes
 npm run round:testnet     # honest round: submit → window → finalize
 npm run forged:testnet    # forged jackpot → challenge → resolve_by_admin (true outcomes)
 ```

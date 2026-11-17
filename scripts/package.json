@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "deploy:testnet": "tsx src/deploy.ts",
     "round:testnet": "tsx src/onchainRound.ts",
     "forged:testnet": "tsx src/forgedRound.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@mysten/sui": "2.39.1",
+    "@pachinko/chain": "*",
     "@pachinko/physics": "*"
   },
   "devDependencies": {

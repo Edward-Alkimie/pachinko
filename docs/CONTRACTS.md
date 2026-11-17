@@ -140,14 +140,19 @@ the `u128` product cannot overflow.
 
 | File | Does |
 |---|---|
-| `src/onchainRound.ts` | `npm run round:testnet`: honest round. `seededRound` → `submitResult` → wait until `deadline_ms` + 3 s → `finalize` |
+| `src/deploy.ts` | `npm run deploy:testnet`: `deploy` once, then writes `chain/src/deployments/testnet.json` |
+| `src/onchainRound.ts` | `npm run round:testnet`: honest round on the saved deployment. `seededRound` → `submitResult` → wait until `deadline_ms` + 3 s → `finalize` |
 | `src/forgedRound.ts` | `npm run forged:testnet`: `seededRound` → operator submits a forged jackpot (every ball in the best pocket, with the matching hash) → `challenge` (optional second key) → `resolveByAdmin` with the true outcomes |
-| `src/steps.ts` | one function per on-chain step: `deploy` (publish → create house → fund house) · `createRound` · `drawSeed` · `seededRound` (those three + `runRound`) · `submitResult` · `challenge` · `resolveByAdmin` · `finalize` · `waitForDeadline` |
+| `src/steps.ts` | one function per on-chain step (signs a `@pachinko/chain` transaction): `deploy` (publish → create house → fund house) · `createRound` · `drawSeed` · `seededRound` (those three + `runRound`) · `submitResult` · `challenge` · `resolveByAdmin` · `finalize` · `waitForDeadline` |
 | `src/sui.ts` | `SuiGrpcClient` (testnet JSON-RPC is off), `execute` (sign, print digest + Suiscan link, fail on abort, wait for indexing), created-object and BCS-event readers, `buildPackage` (`sui move build --dump-bytecode-as-base64`) |
 | `src/env.ts` | settings from the repo-root `.env`; only `SUI_PRIVATE_KEY` is required |
 
 The script checks that the round's `config_version` equals the local physics version before it
 plays. It reads the seed and the deadline from the `SeedDrawn` and `ResultSubmitted` events.
+
+Current deployment (`npm run deploy:testnet`, 2026-11-17): package
+`0x3738a27bc8e378210400ab634bf905cd75b43545db72f279f41ed72693c30bb0`. All ids are in
+`chain/src/deployments/testnet.json`. The two runs below are from earlier one-off publishes.
 
 ### Testnet run: honest round (2026-11-17)
 
@@ -191,3 +196,41 @@ Package `0x1ae062c5b55d9efff887159b7a3151279cbd1b865db978c4026a0248b9347a57`, ro
 - **Same key both sides:** this run had no `CHALLENGER_PRIVATE_KEY`, so the challenger was the main address.
 - **Same payout:** with the flat 1× placeholder, the forged and true payouts are equal (0.01 SUI). Real multipliers make the forged claim pay more.
 
+
+## 10. Connection plan (draft)
+
+Goal: a player clicks **Play on-chain** in the frontend, signs one transaction, and the rest
+happens without a terminal. The contracts don't change. Django is not involved yet: the chain
+is the source of truth, and Django can mirror rounds later for history.
+
+```
+frontend (player wallet)           Sui testnet                     operator (physics-service)
+"Play on-chain" → sign ─────────▶ create_round → BET_LOCKED ─────▶ sees RoundCreated
+                                                                   draw_seed          → SEEDED
+poll Round: seed appears ◀─────── Round.seed ◀───────────────────── runRound(seed, round_id)
+runRound(seed) locally → animate                                   submit_result      → SUBMITTED
+poll Round: status / deadline ◀── window (anyone may challenge)
+show payout ◀──────────────────── Finalized ◀───────────────────── after deadline: finalize → FINALIZED
+```
+
+**Decision: the operator draws the seed.** The player signs once, only `create_round`.
+`draw_seed` stays callable by anyone, so if the operator stalls, the frontend can later offer
+"draw seed" as a fallback (see open decision 4).
+
+### Steps (one commit each)
+
+| # | What | Files | Owner area |
+|---|---|---|---|
+| 1 ✅ | **Shared chain package** `chain/` (`@pachinko/chain`): BCS event layouts, transaction builders that return an unsigned `Transaction` (`createRound`, `drawSeed`, `submitResult`, `finalize`, …), `-1 ↔ 0xFFFF`, gRPC client factory. `scripts/` switches to it. | new `chain/`; `scripts/src/*`; root `package.json` (workspace) | shared |
+| 2 ✅ | **Deploy once:** `npm run deploy:testnet` publishes + creates and funds the House, then writes the ids to `chain/src/deployments/testnet.json` (public ids, committed). Scripts, operator and frontend all import it. `round:testnet` reuses it instead of publishing. | `scripts/`, `chain/` | shared |
+| 3 | **Operator loop:** polls `RoundCreated` events for the deployed package; for each round reads its status and does the next step: draw seed → `runRound` → submit → wait for the deadline → finalize. It skips challenged rounds (the arbiter resolves those). Reading the status first makes it safe to restart. Operator key: `OPERATOR_PRIVATE_KEY` in `.env`. | **new files only:** `physics-service/src/operator/*.ts`; `physics-service/package.json` (`npm run operator`, deps) | Kevin's package |
+| 4 | **Frontend on-chain play:** wallet connect (`@mysten/dapp-kit-react` + `dapp-kit-core`, Slush wallet on testnet), the player signs `create_round`, the page polls the Round until the seed appears, then plays it with the existing `useRound.start(seed, round_id)`, then shows status and payout until `Finalized`. Local Start / Replay stay as they are. | **new:** `hooks/useOnchainRound.ts`, `components/WalletPanel.tsx`, `components/OnchainPanel.tsx`; **edited:** `main.tsx` (wallet provider), `App.tsx` (button + panels), `frontend/package.json` | Kevin's game frontend + shared wallet |
+| 5 | **Docs:** `SPEC.md` §7.3 (chain package + deployment file), `ARCHITECTURE.md` flow, this file, READMEs | docs | shared |
+
+Kevin's existing files that change: `physics-service/package.json`, `frontend/package.json`,
+`frontend/src/main.tsx`, `frontend/src/App.tsx`. Everything else is new files.
+
+### To check while building
+- How the operator finds new rounds: GraphQL event query by type (`…::round::RoundCreated`) with a cursor, or a gRPC equivalent if one exists.
+- Whether the public testnet gRPC-web endpoint accepts browser (CORS) requests. If not, the frontend reads through GraphQL.
+- The player needs a wallet with testnet SUI (faucet). The demo needs the House funded and the operator running.

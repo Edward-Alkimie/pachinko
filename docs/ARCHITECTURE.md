@@ -154,10 +154,12 @@ Same check offline: `npm run replay -- <seed> [roundId]` prints the outcomes and
 ## 4b. Flow F: one round on Sui testnet ✅ (script; backend/frontend wiring ⏳)
 
 ```
-scripts/src/onchainRound.ts                 contracts/pachinko (Move)                 events read
-───────────────────────────                 ─────────────────────────                 ───────────
-publish (tx.publish)                 ──────▶ init: AdminCap, shared Game
-setUpHouse                           ──────▶ issue_operator_cap, create_house; fund_house
+scripts/ (deploy.ts once, then onchainRound.ts)   contracts/pachinko (Move)         events read
+────────────────────────────────────────────   ─────────────────────────         ───────────
+deploy:testnet → chain/src/deployments/testnet.json
+  publish (tx.publish)               ──────▶ init: AdminCap, shared Game
+  setUpHouse                         ──────▶ issue_operator_cap, create_house; fund_house
+round:testnet (reads testnet.json)
 createRound(bet coin)                ──────▶ round::create_round      → BET_LOCKED    RoundCreated (round_id, config_version)
 drawSeed (separate tx)               ──────▶ round::draw_seed(Random) → SEEDED        SeedDrawn (seed)
 runRound(seed, round_id)  (physics/, off-chain)
@@ -264,13 +266,24 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | `result_hash` | verification | SPEC §3 bytes → `sha2_256` (same as `hashRoundResult`) | Kiana | ✅ |
 | `submitted_hash` / `treasury_value` | verification | reads: stored result hash, house balance | Kiana | ✅ |
 
+### `chain/` (`@pachinko/chain`, shared Sui code)
+
+| Function | File | Input → Output | Used by | Status |
+|---|---|---|---|---|
+| `testnetDeployment` / `parseDeployment` | deployment.ts | `deployments/testnet.json` → checked `Deployment` (ids + House settings) | scripts, (next) operator, frontend | ✅ |
+| `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, (next) operator, frontend | ✅ |
+| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` (BCS) | (next) operator, frontend | ✅ |
+| event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, (next) operator | ✅ |
+| `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
+
 ### `scripts/` (testnet tooling)
 
 | Function | File | Does | Status |
 |---|---|---|---|
-| `main` | src/onchainRound.ts | `npm run round:testnet`: honest round (Flow F) end to end, prints every digest | ✅ |
+| `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy` once, writes `chain/src/deployments/testnet.json` | ✅ |
+| `main` | src/onchainRound.ts | `npm run round:testnet`: honest round (Flow F) on the saved deployment, prints every digest | ✅ |
 | `main` / `forgedJackpot` | src/forgedRound.ts | `npm run forged:testnet`: operator forges a jackpot (matching hash) → `challenge` → `resolveByAdmin` with true outcomes | ✅ |
-| `deploy` / `createRound` / `drawSeed` / `seededRound` / `submitResult` / `challenge` / `resolveByAdmin` / `finalize` / `waitForDeadline` | src/steps.ts | one function per on-chain step (one tx each; `deploy` = publish + create + fund house), shared by both scripts | ✅ |
+| `deploy` / `createRound` / `drawSeed` / `seededRound` / `submitResult` / `challenge` / `resolveByAdmin` / `finalize` / `waitForDeadline` | src/steps.ts | one function per on-chain step: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |
 | `connect` / `execute` | src/sui.ts | gRPC client + signer; sign, print digest, fail on abort, wait for indexing | ✅ |
 | `buildPackage` / `publishedPackageId` / `createdObjectId` / `readEvent` | src/sui.ts | compiled modules for publish; ids of created objects; decode BCS events | ✅ |
 | `loadEnv` | src/env.ts | settings from `.env` (`SUI_PRIVATE_KEY` required) | ✅ |

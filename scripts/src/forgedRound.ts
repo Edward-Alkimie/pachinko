@@ -1,7 +1,7 @@
 /**
  * A forged result caught by a challenge, on Sui testnet:
  *
- *   publish → house → round → seed → runRound (the true result)
+ *   round → seed → runRound (the true result)   [saved deployment, deploying key = admin + operator]
  *   → operator submits a forged jackpot: every ball in the best pocket, with the matching hash
  *   → challenger disputes it inside the window → admin resolves with the true outcomes
  *   → both bonds go to the challenger; the player is paid from the true result
@@ -12,6 +12,7 @@
  * testnet SUI) makes the bond transfer visible; without it the main key also challenges.
  */
 import { DEFAULT_CONFIG, hashRoundResult } from '@pachinko/physics'
+import { testnetDeployment } from '@pachinko/chain'
 import { loadEnv } from './env'
 import { challenge, resolveByAdmin, seededRound, submitResult } from './steps'
 import { connect } from './sui'
@@ -31,7 +32,8 @@ async function main() {
   console.log(`address          ${sui.address}`)
   console.log(`challenger       ${challenger.address}\n`)
 
-  const { deployment, round, seed, result } = await seededRound(sui, env)
+  const deployment = testnetDeployment()
+  const { round, seed, result } = await seededRound(sui, env, deployment)
   const forged = forgedJackpot(env.multipliersBps)
   const forgedHash = hashRoundResult({
     version: DEFAULT_CONFIG.version,
@@ -40,8 +42,8 @@ async function main() {
     outcomes: forged.outcomes,
   })
   console.log(`  operator forges: all ${forged.outcomes.length} balls in pocket ${forged.pocket}`)
-  await submitResult(sui, env, deployment, round, forged.outcomes, forgedHash)
-  await challenge(challenger, env, deployment, round)
+  await submitResult(sui, deployment, round, forged.outcomes, forgedHash)
+  await challenge(challenger, deployment, round)
   const resolution = await resolveByAdmin(sui, deployment, round, result.outcomes)
 
   const forgedPayout = (env.betMist * env.multipliersBps[forged.pocket]) / BPS

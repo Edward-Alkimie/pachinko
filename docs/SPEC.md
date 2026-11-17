@@ -156,3 +156,16 @@ Finalized       { round: ID, round_id: u64, player: address, payout: u64, result
 Aborts: `EInvalidHouseConfig` (0), `EWrongBallCount` (1), `EInvalidOutcome` (2), `EHashMismatch` (3),
 `EWrongBond` (4), `EWrongHouse` (5), `EWindowClosed` (6), `EWindowOpen` (7), `EHouseInsolvent` (8).
 Wrong status aborts with the `round` errors (§7.1).
+
+### 7.3 Shared chain code (`chain/`, `@pachinko/chain`) and the deployment file
+Everything that talks to the contracts imports this package (scripts, operator, frontend, verifier).
+
+- `testnetDeployment()` reads and checks `chain/src/deployments/testnet.json`, the **current testnet deployment**:
+  `{ network: "testnet", packageId, gameId, houseId, adminCapId, operatorCapId, house: { multipliersBps[],
+  ballsPerRound, operatorBondMist, challengerBondMist, challengeWindowMs } }`. u64 values are decimal strings.
+  It is written by `npm run deploy:testnet` and committed. A redeploy replaces it.
+- Transaction builders return an unsigned `Transaction`: `createRoundTx`, `drawSeedTx`, `submitResultTx`, `challengeTx`,
+  `resolveByAdminTx`, `finalizeTx`, `setUpHouseTx`, `fundHouseTx`. Bonds are split from gas using the deployment's amounts.
+- Reads: `fetchRound` → `RoundView` (`seed` is `null` until drawn), `fetchSubmission` → `SubmissionView` (from SUBMITTED on),
+  `RoundStatus` (§7.1 values). Events: BCS layouts + `eventType(packageId, name)`.
+- Outcomes: `toOnchainOutcomes` / `fromOnchainOutcomes` (`-1` ↔ `0xFFFF`).
