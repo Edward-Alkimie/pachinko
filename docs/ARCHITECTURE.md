@@ -234,7 +234,14 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | `draw_seed` | round | non-public `entry`; 32 bytes from `sui::random` (→ SEEDED), emit `SeedDrawn` | Kevin | ✅ |
 | `set_config_version` | round | admin: physics version for new rounds | Kevin | ✅ |
 | `mark_submitted` / `mark_challenged` / `finalize_unchallenged` / `finalize_disputed` | round | `public(package)` status transitions used by `verification` | Kevin | ✅ |
-| `submit_result` / `challenge` / `resolve_by_admin` / `finalize` | verification | result + hash check, challenge window, arbitration, payout | Kiana | ⏳ |
+| `issue_operator_cap` / `create_house` / `fund_house` / `withdraw_house` | verification | admin setup: operator, payout table, bonds, window, treasury | Kiana | ✅ |
+| `submit_result` | verification | operator posts outcomes + hash (checked with `result_hash`), locks bond, starts window (→ SUBMITTED) | Kiana | ✅ |
+| `challenge` | verification | anyone locks a bond before `deadline_ms` (→ CHALLENGED) | Kiana | ✅ |
+| `finalize` | verification | after the window: `pay_out`, operator bond back (→ FINALIZED) | Kiana | ✅ |
+| `resolve_by_admin` → `settle_dispute` | verification | arbiter posts correct outcomes; hash compare decides; loser's bond to winner; `pay_out` (→ FINALIZED) | Kiana | ✅ |
+| `pay_out` | verification | placeholder payout rule (one function) | Kiana | ✅ |
+| `result_hash` | verification | SPEC §3 bytes → `sha2_256` (same as `hashRoundResult`) | Kiana | ✅ |
+| `submitted_hash` / `treasury_value` | verification | reads: stored result hash, house balance | Kiana | ✅ |
 
 ---
 

@@ -114,3 +114,45 @@ SeedDrawn    { round: ID, round_id: u64, seed: vector<u8> }
 ```
 Aborts: `EZeroBet` (0), `ESeedAlreadyDrawn` (1); transitions used by `verification`:
 `ENotSeeded` (2), `ENotSubmitted` (3), `ENotChallenged` (4).
+
+### 7.2 `verification` module
+Outcomes on-chain are `vector<u16>`, one per ball; `0xFFFF` = `-1` (never landed). These are the
+§3 `i16 BE` bytes, so `verification::result_hash` equals `hashRoundResult` (tested against the §3 golden fixture).
+
+`House` (shared, created by admin): `treasury: Balance<SUI>`, `multipliers_bps: vector<u64>` (one per
+pocket, 10 000 = 1×, max 100×), `balls_per_round`, `operator_bond`, `challenger_bond`, `challenge_window_ms`.
+
+`Submission` (dynamic field on `Round`, key `SubmissionKey()`; kept after settlement as the final result):
+`house: ID`, `operator: address`, `outcomes: vector<u16>`, `result_hash: vector<u8>`, `deadline_ms: u64`,
+`operator_bond`, `challenger: Option<address>`, `challenger_bond`.
+
+Entry functions:
+```move
+public fun submit_result(_: &OperatorCap, round: &mut Round, house: &House, outcomes: vector<u16>,
+    result_hash: vector<u8>, bond: Coin<SUI>, clock: &Clock, ctx: &mut TxContext)       // SEEDED → SUBMITTED
+public fun challenge(round: &mut Round, house: &House, bond: Coin<SUI>, clock: &Clock,
+    ctx: &mut TxContext)                                                                 // SUBMITTED → CHALLENGED, now < deadline_ms
+public fun finalize(round: &mut Round, house: &mut House, clock: &Clock, ctx: &mut TxContext)
+                                                                                         // SUBMITTED → FINALIZED, now ≥ deadline_ms
+public fun resolve_by_admin(_: &AdminCap, round: &mut Round, house: &mut House,
+    correct_outcomes: vector<u16>, ctx: &mut TxContext)                                 // CHALLENGED → FINALIZED
+public fun result_hash(config_version: &String, seed: &vector<u8>, round_id: u64, outcomes: &vector<u16>): vector<u8>
+```
+Admin: `issue_operator_cap(&AdminCap, recipient, ctx)`, `create_house(&AdminCap, multipliers_bps,
+balls_per_round, operator_bond, challenger_bond, challenge_window_ms, ctx)`,
+`withdraw_house(&AdminCap, house, amount, ctx): Coin<SUI>`. Anyone: `fund_house(house, Coin<SUI>)`.
+
+Verdict: `operator_honest = (submitted result_hash == result_hash(correct_outcomes))`. Winner gets both bonds.
+
+Payout (placeholder): `payout = bet × Σ multipliers_bps[outcome] / (ball_count × 10 000)`, `0xFFFF` pays 0.
+
+Events:
+```move
+ResultSubmitted { round: ID, round_id: u64, operator: address, outcomes: vector<u16>, result_hash: vector<u8>, bond: u64, deadline_ms: u64 }
+Challenged      { round: ID, round_id: u64, challenger: address, bond: u64 }
+Resolved        { round: ID, round_id: u64, operator_honest: bool, winner: address, award: u64, result_hash: vector<u8> }
+Finalized       { round: ID, round_id: u64, player: address, payout: u64, result_hash: vector<u8> }
+```
+Aborts: `EInvalidHouseConfig` (0), `EWrongBallCount` (1), `EInvalidOutcome` (2), `EHashMismatch` (3),
+`EWrongBond` (4), `EWrongHouse` (5), `EWindowClosed` (6), `EWindowOpen` (7), `EHouseInsolvent` (8).
+Wrong status aborts with the `round` errors (§7.1).

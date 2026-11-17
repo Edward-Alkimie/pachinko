@@ -10,3 +10,7 @@ Needs the Sui CLI (`sui --version`). Run from this folder:
 sui move build --lint      # compile; must print no warnings
 sui move test --lint       # unit tests (test_scenario)
 ```
+
+Tests (`tests/`): `round_tests` (bet, seed, config version), `verification_tests` (result hash
+equals the physics golden fixture; honest round; forged result caught by a challenge; false
+challenge loses its bond; wrong state / wrong time / bad input aborts; house insolvency).

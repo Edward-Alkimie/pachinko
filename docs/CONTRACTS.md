@@ -79,7 +79,7 @@ create_round ──▶  draw_seed  ──▶    run runRound(seed) off-chain
 |---|---|---|
 | `issue_operator_cap(&AdminCap, recipient, ctx)` | admin | — |
 | `create_house(&AdminCap, multipliers_bps, balls_per_round, operator_bond, challenger_bond, challenge_window_ms, ctx)` | admin | — (shares `House`) |
-| `fund_house(house, coin)` / `withdraw_house(&AdminCap, house, amount, ctx)` | anyone / admin | — |
+| `fund_house(house, coin)` / `withdraw_house(&AdminCap, house, amount, ctx): Coin<SUI>` | anyone / admin | — |
 | `submit_result(&OperatorCap, round, house, outcomes, result_hash, bond, clock, ctx)` | operator | SEEDED → SUBMITTED |
 | `challenge(round, house, bond, clock, ctx)` | anyone | SUBMITTED → CHALLENGED |
 | `resolve_by_admin(&AdminCap, round, house, correct_outcomes, ctx)` | admin | CHALLENGED → FINALIZED |
@@ -88,6 +88,11 @@ create_round ──▶  draw_seed  ──▶    run runRound(seed) off-chain
 Checks in `submit_result`: `outcomes.length() == balls_per_round`, each outcome `< pockets` or `0xFFFF`,
 bond `== operator_bond`, `result_hash == sha2_256(SPEC layout)`.
 The window is `[submitted, deadline_ms)`: `challenge` needs `now < deadline_ms`, `finalize` needs `now ≥ deadline_ms`.
+Each function runs the status transition first, so a call in the wrong state aborts with the
+`round` status error; any later check that fails reverts the whole transaction.
+
+Reads: `result_hash(config_version, seed, round_id, outcomes)` (SPEC §3 hash, same bytes as
+`hashRoundResult`), `submitted_hash(round)`, `treasury_value(house)`.
 
 **Arbitration, ready for the committee.** `resolve_by_admin` only checks the `AdminCap` and then calls one
 internal `settle_dispute(round, house, correct_outcomes)`. The arbiter posts the correct outcomes, and the
@@ -106,14 +111,19 @@ payout = bet × Σ multipliers_bps[outcome_i] / (ball_count × 10_000)      (out
 ```
 
 Each ball stakes `bet / ball_count`. The sum is taken in `u128` and divided once at the end, so
-nothing is lost to rounding on every ball. The bet goes into the house treasury, and the payout is paid
-from it. Multipliers are capped at `MAX_MULTIPLIER_BPS` (100×) so the `u128` product cannot overflow.
+nothing is lost to rounding on every ball. Multipliers are capped at `MAX_MULTIPLIER_BPS` (100×) so
+the `u128` product cannot overflow.
+
+**Pool (agreed):**
+- A bet stays locked in its `Round` until settlement. Then it joins the house treasury, and the payout is paid from the treasury.
+- Losing rounds grow the pool, and wins can exceed the bet.
+- The admin calls `fund_house` once at setup for starting liquidity, and again whenever the pool runs low.
 
 ## 7. Open decisions
 
 | # | Question | Placeholder now |
 |---|---|---|
-| 1 | Pool rules: real multipliers / RTP per pocket (Phase 4 odds) | admin-set `multipliers_bps`, paid from a `House` the admin funds |
+| 1 | Real multipliers / RTP per pocket (Phase 4 odds) | admin-set `multipliers_bps`; pool funding agreed (§6) |
 | 2 | Payout cap, and checking that the house can cover a bet when it is placed | none: `finalize` aborts (`EHouseInsolvent`) until the house is funded |
 | 3 | `withdraw_house` can take funds that pending rounds need | admin is trusted for now |
 | 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | none: the round waits |
