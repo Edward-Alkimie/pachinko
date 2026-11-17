@@ -27,6 +27,10 @@ export interface Deployment {
 export const TESTNET_GRPC_URL = 'https://fullnode.testnet.sui.io:443'
 /** Explorer page of a transaction: `${TESTNET_EXPLORER_TX}/<digest>`. */
 export const TESTNET_EXPLORER_TX = 'https://suiscan.xyz/testnet/tx'
+/** Explorer page of an object: `${TESTNET_EXPLORER_OBJECT}/<id>`. */
+export const TESTNET_EXPLORER_OBJECT = 'https://suiscan.xyz/testnet/object'
+/** Explorer page of an address (balance, transactions): `${TESTNET_EXPLORER_ACCOUNT}/<address>`. */
+export const TESTNET_EXPLORER_ACCOUNT = 'https://suiscan.xyz/testnet/account'
 
 const OBJECT_ID = /^0x[0-9a-f]{64}$/
 const DECIMAL = /^\d+$/

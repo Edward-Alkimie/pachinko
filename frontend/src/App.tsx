@@ -8,9 +8,14 @@
  *
  * Sign-in (useAuth + AuthPanel) sits above the controls. Playing does not
  * need an account yet; rounds will be tied to the signed-in user later.
+ *
+ * OnchainPanel plays a round on Sui testnet: the wallet bets, and once the seed is
+ * on-chain it is played here through the same useRound.start as a local round.
  */
+import { useCallback } from 'react'
 import { DEFAULT_CONFIG, randomSeedHex } from '@pachinko/physics'
 import { AuthPanel } from './components/AuthPanel'
+import { OnchainPanel } from './components/OnchainPanel'
 import { ResultPanel } from './components/ResultPanel'
 import { SeedInput } from './components/SeedInput'
 import { PachinkoCanvas } from './game/PachinkoCanvas'
@@ -28,6 +33,7 @@ function App() {
   const { state, start } = useRound(CONFIG)
   const { result, tick, status } = state
   const isBusy = status === 'simulating'
+  const playSeed = useCallback((seedHex: string, roundId: bigint) => void start(seedHex, roundId), [start])
 
   const frameIndex = result ? frameIndexAt(tick, RECORD_EVERY, result.frames.length) : -1
   const balls = result && frameIndex >= 0 ? result.frames[frameIndex].balls : []
@@ -49,6 +55,7 @@ function App() {
 
         <aside className="side">
           <AuthPanel state={authState} {...authActions} />
+          <OnchainPanel onSeed={playSeed} />
           <button
             className="start"
             onClick={() => void start(randomSeedHex(), LOCAL_ROUND_ID)}

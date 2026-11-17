@@ -1,0 +1,13 @@
+.onchain-panel { display: grid; gap: 10px; background: #18202e; border-radius: 8px; padding: 16px; font-size: 0.9rem; }
+.onchain-panel.off { color: #8a94a6; }
+.onchain-panel .deployment, .onchain-panel .hint { margin: 0; color: #8a94a6; font-size: 0.8rem; }
+.onchain-panel .wallet-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.onchain-panel .wallet-actions { display: flex; gap: 12px; }
+.onchain-panel .wallets { display: grid; gap: 6px; }
+.onchain-panel .wallets button { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.onchain-panel button.link { background: none; border: none; padding: 0; color: #8a94a6; text-decoration: underline; }
+.onchain-panel button.link:hover:not(:disabled) { background: none; color: #e6e9ef; }
+.onchain-panel .status { margin: 0; color: #e5c07b; }
+.onchain-panel .error { margin: 0; color: #e06c75; font-size: 0.85rem; }
+.onchain-panel a { color: #88c0d0; }
+.onchain-panel strong { color: #e5c07b; }

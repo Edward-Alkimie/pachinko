@@ -226,11 +226,11 @@ show payout ◀──────────────────── Fina
 | 1 ✅ | **Shared chain package** `chain/` (`@pachinko/chain`): BCS event layouts, transaction builders that return an unsigned `Transaction` (`createRound`, `drawSeed`, `submitResult`, `finalize`, …), `-1 ↔ 0xFFFF`, gRPC client factory. `scripts/` switches to it. | new `chain/`; `scripts/src/*`; root `package.json` (workspace) | shared |
 | 2 ✅ | **Deploy once:** `npm run deploy:testnet` publishes + creates and funds the House, then writes the ids to `chain/src/deployments/<name>.json` (one per teammate, chosen with `PACHINKO_DEPLOYMENT`; public ids, committed). Scripts, operator and frontend all read it. `round:testnet` reuses it instead of publishing. | `scripts/`, `chain/` | shared |
 | 3 ✅ | **Operator loop:** polls `RoundCreated` events for the deployed package; for each round reads its status and does the next step: draw seed → `runRound` → submit → wait for the deadline → finalize. It skips challenged rounds (the arbiter resolves those). Reading the status first makes it safe to restart. Operator key: `OPERATOR_PRIVATE_KEY` in `.env`. | **new files only:** `physics-service/src/operator/*.ts`; `physics-service/package.json` (`npm run operator`, deps) | Kevin's package |
-| 4 | **Frontend on-chain play:** wallet connect (`@mysten/dapp-kit-react` + `dapp-kit-core`, Slush wallet on testnet), the player signs `create_round`, the page polls the Round until the seed appears, then plays it with the existing `useRound.start(seed, round_id)`, then shows status and payout until `Finalized`. Local Start / Replay stay as they are. | **new:** `hooks/useOnchainRound.ts`, `components/WalletPanel.tsx`, `components/OnchainPanel.tsx`; **edited:** `main.tsx` (wallet provider), `App.tsx` (button + panels), `frontend/package.json` | Kevin's game frontend + shared wallet |
+| 4 ✅ | **Frontend on-chain play:** wallet connect (`@mysten/dapp-kit-react` + `dapp-kit-core` hooks with a small `WalletPanel`; the kit's prebuilt connect button didn't receive its instance under React 19, so it isn't used), the player signs `create_round`, the page polls the Round until the seed appears, then plays it with the existing `useRound.start(seed, round_id)`, then shows status and payout until `Finalized`. Local Start / Replay stay as they are. | **new:** `hooks/useOnchainRound.ts`, `components/WalletPanel.tsx`, `components/OnchainPanel.tsx` (+ `.css`), `onchain/deployment.ts`, `onchain/dappKit.ts`; **edited:** `App.tsx` (one panel), `vite.config.ts` (`envDir: '..'`), `frontend/package.json`. `main.tsx` is unchanged: no provider needed | Kevin's game frontend + shared wallet |
 | 5 | **Docs:** `SPEC.md` §7.3 (chain package + deployment file), `ARCHITECTURE.md` flow, this file, READMEs | docs | shared |
 
 Kevin's existing files that change: `physics-service/package.json`, `frontend/package.json`,
-`frontend/src/main.tsx`, `frontend/src/App.tsx`. Everything else is new files.
+`frontend/src/App.tsx`, `frontend/vite.config.ts`. Everything else is new files.
 
 ### To check while building
 - How the operator finds new rounds: GraphQL event query by type (`…::round::RoundCreated`) with a cursor, or a gRPC equivalent if one exists.
@@ -243,4 +243,11 @@ Kevin's existing files that change: `physics-service/package.json`, `frontend/pa
 the player signed only `create_round` (`Gcn2VLxU…`). The operator then drew the seed (`E6geqMKw…`),
 submitted after `runRound` (`2U8ydHXB…`), and finalized 34 s later (`8UE77GBs…`).
 From BET_LOCKED to FINALIZED took 41 s; most of that is the 30 s window.
+
+### Testnet run: full round from the browser (2026-11-17)
+
+On deployment `kiana`, with `npm run operator` running, the browser wallet `0x53d1…f332` signed only the bet
+(**Play on-chain**). The operator drew the seed, submitted and finalized round 4. The page played seed
+`be6542ca…388a` on the board and showed hash `d34c7a9d…0c8c` and the payout (0.01 SUI, flat 1×), matching
+the on-chain `Round` and `Submission`.
 

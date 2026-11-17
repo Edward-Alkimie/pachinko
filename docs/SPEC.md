@@ -165,6 +165,7 @@ Everything that talks to the contracts imports this package (scripts, operator, 
   ballsPerRound, operatorBondMist, challengerBondMist, challengeWindowMs } }`. u64 values are decimal strings.
   - **Selecting:** `PACHINKO_DEPLOYMENT=<name>` in `.env` picks the file (lowercase letters, digits, dashes).
   - **Writing:** `npm run deploy:testnet` writes it, a redeploy replaces it, and the files are committed since the ids are public.
+  - **Frontend:** `VITE_PACHINKO_DEPLOYMENT=<name>` (same file, read through a Vite glob).
   - **Reading:** `parseDeployment` (browser-safe) checks the shape. In Node, `@pachinko/chain/node` has `deploymentName`,
     `loadDeployment(name?)`, `saveDeployment` and `deploymentNames`.
 - Transaction builders return an unsigned `Transaction`: `createRoundTx`, `drawSeedTx`, `submitResultTx`, `challengeTx`,

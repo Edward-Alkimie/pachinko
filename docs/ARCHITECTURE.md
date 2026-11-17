@@ -172,16 +172,19 @@ finalize                             ──────▶ verification::finaliz
 Dispute path (Move tests + `npm run forged:testnet`): `challenge` before `deadline_ms` → CHALLENGED →
 `resolve_by_admin(correct outcomes)` → loser's bond to winner → FINALIZED. Details: `docs/CONTRACTS.md`.
 
-## 4c. Flow G: connected round (operator) ✅ (frontend player ⏳)
+## 4c. Flow G: connected round ✅ (browser wallet → operator → payout)
 
 ```
-player (bet:testnet, later the frontend)        Sui testnet                     physics-service operator (npm run operator)
+player (OnchainPanel or bet:testnet)            Sui testnet                     physics-service operator (npm run operator)
 createRoundTx → sign ──────────────────────▶ create_round → BET_LOCKED ─────▶ tick: listEvents(RoundCreated) → new round
                                                                                nextAction(fetchRound) = drawSeed → drawSeedTx
 fetchRound every 2 s: status / seed  ◀─────── SEEDED ◀─────────────────────────  nextAction = submit → runRound(seed) → submitResultTx
                                               SUBMITTED (window) ◀──────────── nextAction = wait until deadline + 3 s
 findFinalized → payout  ◀──────────────────── FINALIZED ◀───────────────────── nextAction = finalize → finalizeTx
 ```
+
+In the browser, `useOnchainRound` passes the seed to the normal `useRound.start(seed, round_id)`, so an on-chain
+round plays on the same board as a local one. The wallet signs only the bet.
 
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
 picks up where it stopped. Challenged rounds are left to the arbiter.
@@ -234,6 +237,11 @@ picks up where it stopped. Challenged rounds are left to the arbiter.
 | `readCookie` / `ApiError` | services/auth.ts | cookie lookup; failed request (status 0 = unreachable) | ✅ |
 | `useAuth` | hooks/useAuth.ts | sign-in state: loading → anonymous / authenticated; login, register, logout, clearError | ✅ |
 | `AuthPanel` | components/AuthPanel.tsx | login/register form (two modes) or "Signed in as …" + Log out | ✅ |
+| `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status, round + bet links, window end, payout; off with a reason when no deployment is set | ✅ |
+| `WalletPanel` | components/WalletPanel.tsx | "Connect <wallet>" per Sui wallet (dApp Kit `useWallets`), or address (explorer link) + Copy + Disconnect | ✅ |
+| `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` → `onSeed` once the seed is on-chain → `fetchSubmission` (deadline) → `findFinalized` (payout); phases idle → signing → waitingSeed → verifying → final / challenged / error | ✅ |
+| `ONCHAIN` / `selectDeployment` | onchain/deployment.ts | `VITE_PACHINKO_DEPLOYMENT` → that `chain/src/deployments/*.json` (Vite glob), or off + reason | ✅ |
+| `getDAppKit` | onchain/dappKit.ts | dApp Kit instance for testnet (gRPC client, Slush web wallet), created on first use | ✅ |
 
 ### `physics-service/`
 

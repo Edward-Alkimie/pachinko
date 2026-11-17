@@ -74,6 +74,13 @@ npm run bet:testnet       # terminal 2: bet, then watch BET_LOCKED â†’ SEEDED â†
 The operator key must own your deployment's `OperatorCap` (the key that ran `deploy:testnet`).
 Use `OPERATOR_PRIVATE_KEY` in `.env` if it differs from `SUI_PRIVATE_KEY`.
 
+**Play in the browser:** set `VITE_PACHINKO_DEPLOYMENT=<your name>` in `.env`, keep `npm run operator`
+running, then `npm run dev` and open the page. In **On-chain play**, connect a Sui wallet set to testnet
+(e.g. Slush: browser extension, or the Slush web wallet that the page offers) with some faucet SUI
+**on that wallet's address**, then click **Play on-chain**. You sign only the bet; the seed, physics,
+submit and finalize happen on the operator. The board plays the on-chain seed, and the payout appears
+once the round is final.
+
 `forged:testnet` can use a second address as the challenger, so the bond transfer shows up as a
 real transfer. Repeat steps 1, 3 and 4 above for a second address (e.g. `sui client new-address ed25519`),
 then set `CHALLENGER_PRIVATE_KEY=` in `.env`. Without it, the main key also challenges.

@@ -11,6 +11,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mysten/dapp-kit-core": "1.6.43",
+    "@mysten/dapp-kit-react": "2.1.45",
+    "@mysten/sui": "2.39.1",
+    "@pachinko/chain": "*",
     "@pachinko/physics": "*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

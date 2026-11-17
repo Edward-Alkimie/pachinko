@@ -29,6 +29,7 @@ npm run round:testnet       # play one round on that deployment (needs SUI_PRIVA
                             # setup: contracts/pachinko/README.md)
 npm run operator            # operator: draws seeds, runs physics, submits, finalizes (keep running)
 npm run bet:testnet         # player side only: bet, then follow the round (needs the operator)
+                            # in the browser: "Play on-chain" (needs VITE_PACHINKO_DEPLOYMENT + a Sui wallet)
 npm run forged:testnet      # same, but the operator forges a jackpot and a challenge catches it
 ```
 
