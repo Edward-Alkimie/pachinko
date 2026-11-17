@@ -127,7 +127,7 @@ GET  /api/auth/me        ──────────▶ MeView        { id, u
   full nodes (checked 2026-11-17); use GraphQL `https://graphql.testnet.sui.io/graphql`
   (`address(address){ balance(coinType:"0x2::sui::SUI"){ totalBalance } }`) or gRPC.
 
-## 4. Flow C: playing and verifying a round ⏳ (steps 5–7)
+## 4. Flow C: playing and verifying a round 🚧 (physics-service ✅, backend ⏳)
 
 ```
 frontend                      backend (Django)              physics-service
@@ -136,14 +136,18 @@ POST /api/rounds/      ──────▶ create Round, seed
                        ◀────── { roundId, seed }
 runRound(seed) locally
 play frames on canvas
-POST /api/results/     ──────▶ store client outcomes ─────▶ POST /verify {seed, roundId, outcomes}
-  { roundId, outcomes }                                       runRound(seed) again
-                                                              compare outcome per ball
-                              store check + mismatches ◀──── { ok, mismatches[] }
+POST /api/results/     ──────▶ store client outcomes ─────▶ POST /verify {seed, roundId,
+  { roundId, outcomes }                                          configVersion, outcomes}
+                                                              parseVerifyRequest (400/409)
+                                                              verifyRound: runRound again
+                                                              compareOutcomes per ball
+                              store check + mismatches ◀──── { ok, mismatches[],
+                                                                serverOutcomes, resultHash }
                        ◀────── verified result
 ```
 
-Server outcome wins on any mismatch.
+Server outcome wins on any mismatch. Contract: `docs/SPEC.md` §6.
+Same check offline: `npm run replay -- <seed> [roundId]` prints the outcomes and hash.
 
 ---
 
@@ -198,9 +202,14 @@ Server outcome wins on any mismatch.
 
 | Function | File | Does | Status |
 |---|---|---|---|
-| `createApp` | src/app.ts | HTTP: `GET /health` ✅, `POST /verify` ⏳ (501 now) | ✅ / ⏳ |
+| `createApp` | src/app.ts | HTTP: `GET /health`, `POST /verify` (400 / 409 / 413 checks, 16 KiB body limit) | ✅ |
+| `parseVerifyRequest` | src/verify.ts | untrusted body → `VerifyRequest` (seed, roundId, configVersion, 100 outcomes) or error | ✅ |
+| `verifyRound` | src/verify.ts | re-run `runRound` on the server → `{ ok, mismatches, serverOutcomes, resultHash }` | ✅ |
+| `compareOutcomes` | src/verify.ts | (server, client) → balls that differ `{ballId, client, server}` | ✅ |
+| `parseSeedHex` / `parseRoundId` | src/parse.ts | shared input checks (seed hex, u64 round id) → `Parsed<T>` | ✅ |
+| `parseReplayArgs` / `replayReport` | src/replay.ts | replay CLI: args → report (end tick, hash, pocket tally, outcomes) | ✅ |
+| replay CLI | src/cli.ts | `npm run replay -- <seed> [roundId]` | ✅ |
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
-| replay CLI | src/cli.ts | `npm run replay -- <seed>` | ⏳ |
 
 ### `backend/` (Django)
 
