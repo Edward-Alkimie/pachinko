@@ -5,12 +5,17 @@
  *   - balls on the canvas = the recorded frame for the current tick
  *   - tally               = balls whose landing tick has passed
  *   - hash                = shown once playback finishes
+ *
+ * Sign-in (useAuth + AuthPanel) sits above the controls. Playing does not
+ * need an account yet; rounds will be tied to the signed-in user later.
  */
 import { DEFAULT_CONFIG, randomSeedHex } from '@pachinko/physics'
+import { AuthPanel } from './components/AuthPanel'
 import { ResultPanel } from './components/ResultPanel'
 import { SeedInput } from './components/SeedInput'
 import { PachinkoCanvas } from './game/PachinkoCanvas'
 import { frameIndexAt, tallyAt } from './game/playback'
+import { useAuth } from './hooks/useAuth'
 import { RECORD_EVERY, useRound } from './hooks/useRound'
 import './App.css'
 
@@ -19,6 +24,7 @@ const CONFIG = DEFAULT_CONFIG
 const LOCAL_ROUND_ID = 1n
 
 function App() {
+  const { state: authState, ...authActions } = useAuth()
   const { state, start } = useRound(CONFIG)
   const { result, tick, status } = state
   const isBusy = status === 'simulating'
@@ -42,6 +48,7 @@ function App() {
         <PachinkoCanvas config={CONFIG} balls={balls} />
 
         <aside className="side">
+          <AuthPanel state={authState} {...authActions} />
           <button
             className="start"
             onClick={() => void start(randomSeedHex(), LOCAL_ROUND_ID)}

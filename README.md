@@ -23,12 +23,49 @@ npm run dev                 # frontend (code-server: http://<host>/absproxy/5180
 npm run dev:physics-service # physics service on :8100
 ```
 
-## Run (backend) — needs Python 3.12+ and PostgreSQL
+## Run (backend) — Python 3.12 via `uv`, SQLite by default
+
+First time only — create `.env` (gitignored, never commit it) with a random secret key:
 
 ```bash
-cp .env.example .env              # then edit values
-docker compose --env-file .env up -d   # or use a local Postgres
-cd backend && python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate && python manage.py runserver
+cp .env.example .env
+# Replace DJANGO_SECRET_KEY's placeholder with a fresh random key:
+KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$KEY|" .env
 ```
+
+First time only — Python env (from the repo root):
+
+```bash
+cd backend
+~/.local/bin/uv venv --python 3.12 .venv
+~/.local/bin/uv pip install --python .venv -r requirements.txt -r requirements-dev.txt
+```
+
+Every time — from `backend/`. `set -a` exports every variable `.env` defines; the
+`test -f` stops early with a clear message instead of a Django traceback if `.env`
+is missing:
+
+```bash
+test -f ../.env || { echo "Missing .env — see 'First time only' above"; false; } &&
+  set -a && . ../.env && set +a &&
+  .venv/bin/python manage.py migrate &&
+  .venv/bin/python manage.py runserver 127.0.0.1:8000
+```
+
+Tests: `.venv/bin/python manage.py test` (coverage: `.venv/bin/coverage run manage.py test && .venv/bin/coverage report`).
+
+PostgreSQL instead of SQLite: set `POSTGRES_HOST` (and the other `POSTGRES_*`) in `.env`,
+then `docker compose --env-file .env up -d`.
+
+## Run everything for development
+
+Two terminals: Django (above) on `:8000`, then `npm run dev` for the frontend. Vite
+forwards `<base>api/*` to Django, so sign-in works at `http://<host>/absproxy/5180/`.
+
+## Who owns what
+
+Kevin: `physics/`, game frontend, `physics-service/`, `backend/apps/users` + `apps/rounds`,
+Move `round` module. Kiana: verifier, Verify page, `backend/apps/verification`
+(`/api/verification/`), Move `verification` module. Shared: `docs/SPEC.md`,
+`backend/apps/results`. Details: `docs/ARCHITECTURE.md` §5.
