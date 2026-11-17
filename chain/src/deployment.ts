@@ -26,6 +26,8 @@ export interface Deployment {
 
 /** Public testnet full node (gRPC; works from Node and, via gRPC-web, the browser). */
 export const TESTNET_GRPC_URL = 'https://fullnode.testnet.sui.io:443'
+/** Explorer page of a transaction: `${TESTNET_EXPLORER_TX}/<digest>`. */
+export const TESTNET_EXPLORER_TX = 'https://suiscan.xyz/testnet/tx'
 
 const OBJECT_ID = /^0x[0-9a-f]{64}$/
 const DECIMAL = /^\d+$/

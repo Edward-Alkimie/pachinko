@@ -6,6 +6,7 @@
   "scripts": {
     "deploy:testnet": "tsx src/deploy.ts",
     "round:testnet": "tsx src/onchainRound.ts",
+    "bet:testnet": "tsx src/bet.ts",
     "forged:testnet": "tsx src/forgedRound.ts",
     "typecheck": "tsc --noEmit"
   },

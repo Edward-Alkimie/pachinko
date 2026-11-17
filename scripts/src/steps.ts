@@ -17,6 +17,7 @@ import {
   eventType,
   finalizeTx,
   fundHouseTx,
+  readEvent,
   resolveByAdminTx,
   setUpHouseTx,
   submitResultTx,
@@ -25,7 +26,7 @@ import {
 } from '@pachinko/chain'
 import { DEFAULT_CONFIG, initPhysics, runRound, type RoundResult } from '@pachinko/physics'
 import type { ScriptEnv } from './env'
-import { buildPackage, createdObjectId, execute, publishedPackageId, readEvent, type Sui } from './sui'
+import { buildPackage, createdObjectId, execute, publishedPackageId, type Sui } from './sui'
 
 const PACKAGE_PATH = fileURLToPath(new URL('../../contracts/pachinko', import.meta.url))
 /** Extra wait after the deadline, for clock differences between this machine and the chain. */

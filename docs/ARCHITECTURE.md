@@ -172,6 +172,20 @@ finalize                             ──────▶ verification::finaliz
 Dispute path (Move tests + `npm run forged:testnet`): `challenge` before `deadline_ms` → CHALLENGED →
 `resolve_by_admin(correct outcomes)` → loser's bond to winner → FINALIZED. Details: `docs/CONTRACTS.md`.
 
+## 4c. Flow G: connected round (operator) ✅ (frontend player ⏳)
+
+```
+player (bet:testnet, later the frontend)        Sui testnet                     physics-service operator (npm run operator)
+createRoundTx → sign ──────────────────────▶ create_round → BET_LOCKED ─────▶ tick: listEvents(RoundCreated) → new round
+                                                                               nextAction(fetchRound) = drawSeed → drawSeedTx
+fetchRound every 2 s: status / seed  ◀─────── SEEDED ◀─────────────────────────  nextAction = submit → runRound(seed) → submitResultTx
+                                              SUBMITTED (window) ◀──────────── nextAction = wait until deadline + 3 s
+findFinalized → payout  ◀──────────────────── FINALIZED ◀───────────────────── nextAction = finalize → finalizeTx
+```
+
+The operator keeps no state of its own: it reads each round's status before every step, so a restart
+picks up where it stopped. Challenged rounds are left to the arbiter.
+
 ---
 
 ## 5. Function index
@@ -233,6 +247,9 @@ Dispute path (Move tests + `npm run forged:testnet`): `challenge` before `deadli
 | `parseReplayArgs` / `replayReport` | src/replay.ts | replay CLI: args → report (end tick, hash, pocket tally, outcomes) | ✅ |
 | replay CLI | src/cli.ts | `npm run replay -- <seed> [roundId]` | ✅ |
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
+| `nextAction` | src/operator/nextAction.ts | on-chain `RoundView` (+ deadline) → `drawSeed` / `submit` / `wait` / `finalize` / `drop` (pure) | ✅ |
+| `createOperator` → `tick` | src/operator/operator.ts | poll `RoundCreated` events, advance each round one tx at a time, retry failures after 30 s | ✅ |
+| operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap`, polls every 2 s (Flow G) | ✅ |
 
 ### `backend/` (Django)
 
@@ -270,17 +287,20 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 
 | Function | File | Input → Output | Used by | Status |
 |---|---|---|---|---|
-| `testnetDeployment` / `parseDeployment` | deployment.ts | `deployments/testnet.json` → checked `Deployment` (ids + House settings) | scripts, (next) operator, frontend | ✅ |
-| `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, (next) operator, frontend | ✅ |
-| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` (BCS) | (next) operator, frontend | ✅ |
-| event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, (next) operator | ✅ |
+| `testnetDeployment` / `parseDeployment` | deployment.ts | `deployments/testnet.json` → checked `Deployment` (ids + House settings) | scripts, operator, (next) frontend | ✅ |
+| `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, (next) frontend | ✅ |
+| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` (BCS) | operator, (next) frontend | ✅ |
+| event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, operator | ✅ |
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
+| `signAndExecute` / `readEvent` | execute.ts | keypair + tx → executed tx (throws on abort, waits for indexing); decode one event | scripts, operator | ✅ |
+| `findFinalized` | events.ts | round object id → its `Finalized` event (payout) or `null` (ascending scan) | scripts, (next) frontend | ✅ |
 
 ### `scripts/` (testnet tooling)
 
 | Function | File | Does | Status |
 |---|---|---|---|
 | `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy` once, writes `chain/src/deployments/testnet.json` | ✅ |
+| `main` | src/bet.ts | `npm run bet:testnet`: player side only (create round, follow status, print payout); needs a running operator | ✅ |
 | `main` | src/onchainRound.ts | `npm run round:testnet`: honest round (Flow F) on the saved deployment, prints every digest | ✅ |
 | `main` / `forgedJackpot` | src/forgedRound.ts | `npm run forged:testnet`: operator forges a jackpot (matching hash) → `challenge` → `resolveByAdmin` with true outcomes | ✅ |
 | `deploy` / `createRound` / `drawSeed` / `seededRound` / `submitResult` / `challenge` / `resolveByAdmin` / `finalize` / `waitForDeadline` | src/steps.ts | one function per on-chain step: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |

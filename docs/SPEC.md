@@ -169,3 +169,5 @@ Everything that talks to the contracts imports this package (scripts, operator, 
 - Reads: `fetchRound` → `RoundView` (`seed` is `null` until drawn), `fetchSubmission` → `SubmissionView` (from SUBMITTED on),
   `RoundStatus` (§7.1 values). Events: BCS layouts + `eventType(packageId, name)`.
 - Outcomes: `toOnchainOutcomes` / `fromOnchainOutcomes` (`-1` ↔ `0xFFFF`).
+- Server side: `signAndExecute(client, signer, tx)` (throws on abort, waits for indexing), `readEvent`.
+  `findFinalized(client, packageId, roundObjectId)` → the round's `Finalized` event (payout), or `null`.

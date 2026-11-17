@@ -27,6 +27,8 @@ npm run replay -- <seed> [roundId]  # re-run one round, print outcomes + hash
 npm run deploy:testnet      # publish contracts + House once → chain/src/deployments/testnet.json (commit it)
 npm run round:testnet       # play one round on that deployment (needs SUI_PRIVATE_KEY in .env,
                             # setup: contracts/pachinko/README.md)
+npm run operator            # operator: draws seeds, runs physics, submits, finalizes (keep running)
+npm run bet:testnet         # player side only: bet, then follow the round (needs the operator)
 npm run forged:testnet      # same, but the operator forges a jackpot and a challenge catches it
 ```
 

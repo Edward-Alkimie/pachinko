@@ -7,10 +7,13 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "replay": "tsx src/cli.ts",
+    "operator": "tsx src/operator/main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mysten/sui": "2.39.1",
+    "@pachinko/chain": "*",
     "@pachinko/physics": "*"
   },
   "devDependencies": {

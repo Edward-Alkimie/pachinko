@@ -1,17 +1,12 @@
 /**
- * Thin Sui helpers: gRPC client, one `execute` that prints every digest, and readers for
- * created objects and BCS events. Public testnet JSON-RPC is off, so this uses gRPC.
+ * Sui helpers for the scripts: gRPC client + keypair, an `execute` that prints every digest,
+ * and the publish-only readers. Public testnet JSON-RPC is off, so this uses gRPC.
  */
 import { execFileSync } from 'node:child_process'
-import type { SuiClientTypes } from '@mysten/sui/client'
+import { TESTNET_EXPLORER_TX, signAndExecute, type Executed } from '@pachinko/chain'
 import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import type { Transaction } from '@mysten/sui/transactions'
-
-const EXPLORER_TX = 'https://suiscan.xyz/testnet/tx'
-const INCLUDE = { effects: true, events: true, objectTypes: true } as const
-
-export type Executed = SuiClientTypes.Transaction<typeof INCLUDE>
 
 export interface Sui {
   readonly client: SuiGrpcClient
@@ -28,19 +23,12 @@ export function connect(grpcUrl: string, privateKey: string): Sui {
   }
 }
 
-/** Signs and runs `tx`, prints `label  digest  explorer-link`, waits until it is indexed. */
+/** Signs and runs `tx`, then prints `label  digest  explorer-link`. Throws if it aborted. */
 export async function execute(sui: Sui, label: string, tx: Transaction): Promise<Executed> {
-  const result = await sui.client.signAndExecuteTransaction({
-    transaction: tx,
-    signer: sui.signer,
-    include: INCLUDE,
+  const executed = await signAndExecute(sui.client, sui.signer, tx).catch((error: Error) => {
+    throw new Error(`${label}: ${error.message}`)
   })
-  const executed = result.Transaction ?? result.FailedTransaction
-  console.log(`${label.padEnd(16)} ${executed.digest}  ${EXPLORER_TX}/${executed.digest}`)
-  if (!executed.status.success) {
-    throw new Error(`${label} failed: ${JSON.stringify(executed.status.error)}`)
-  }
-  await sui.client.waitForTransaction({ result })
+  console.log(`${label.padEnd(16)} ${executed.digest}  ${TESTNET_EXPLORER_TX}/${executed.digest}`)
   return executed
 }
 
@@ -67,15 +55,4 @@ export function createdObjectId(executed: Executed, type: string): string {
     .map((o) => o.objectId)
   if (ids.length !== 1) throw new Error(`expected one created ${type}, found ${ids.length}`)
   return ids[0]
-}
-
-/** Decodes the first event of Move type `type` with its BCS schema (e.g. a `bcs.struct`). */
-export function readEvent<T>(
-  executed: Executed,
-  type: string,
-  schema: { parse(bytes: Uint8Array): T },
-): T {
-  const event = executed.events.find((e) => e.eventType === type)
-  if (!event) throw new Error(`no ${type} event in ${executed.digest}`)
-  return schema.parse(event.bcs)
 }

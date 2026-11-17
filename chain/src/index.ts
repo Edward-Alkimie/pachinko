@@ -1,4 +1,4 @@
-export { TESTNET_GRPC_URL, parseDeployment, testnetDeployment } from './deployment'
+export { TESTNET_EXPLORER_TX, TESTNET_GRPC_URL, parseDeployment, testnetDeployment } from './deployment'
 export type { Deployment, HouseSettings } from './deployment'
 export {
   Challenged,
@@ -8,8 +8,11 @@ export {
   RoundCreated,
   SeedDrawn,
   eventType,
+  findFinalized,
 } from './events'
 export type { EventName } from './events'
+export { readEvent, signAndExecute } from './execute'
+export type { Executed } from './execute'
 export {
   RoundStatus,
   fetchRound,

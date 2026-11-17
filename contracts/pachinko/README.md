@@ -63,6 +63,14 @@ npm run round:testnet     # honest round: submit → window → finalize
 npm run forged:testnet    # forged jackpot → challenge → resolve_by_admin (true outcomes)
 ```
 
+**Connected round:** start the operator and leave it running, then place bets as the player.
+```bash
+npm run operator          # terminal 1: draws seeds, runs physics, submits, finalizes
+npm run bet:testnet       # terminal 2: bet, then watch BET_LOCKED → SEEDED → SUBMITTED → FINALIZED
+```
+The operator key must own the deployment's `OperatorCap` (the key that ran `deploy:testnet`).
+Use `OPERATOR_PRIVATE_KEY` in `.env` if it differs from `SUI_PRIVATE_KEY`.
+
 `forged:testnet` can use a second address as the challenger, so the bond transfer shows up as a
 real transfer. Repeat steps 1, 3 and 4 above for a second address (e.g. `sui client new-address ed25519`),
 then set `CHALLENGER_PRIVATE_KEY=` in `.env`. Without it, the main key also challenges.
