@@ -56,3 +56,32 @@ Base path `/api/auth/`. Session-cookie auth. JSON in and out.
   not like the username). Never returned.
 - Rate limit on register + login: `AUTH_THROTTLE_RATE` (default `10/min`) per client IP.
 - Other apps (rounds, verification) use the same session: `request.user` is the account.
+
+## 6. Physics check API (`physics-service`, v0)
+Node service on `PHYSICS_SERVICE_PORT` (default 8100). Called by Django `apps/results`;
+Kiana's verifier can call it or reuse the same comparison.
+
+`GET /health` → 200 `{ status: "ok", configVersion }` (the physics version this service runs).
+
+`POST /verify` — request:
+```json
+{ "seed": "<64 hex, optional 0x>", "roundId": "1",
+  "configVersion": "pachinko-v0.1.0", "outcomes": [0, 6, 4, ...] }
+```
+- `roundId`: decimal string (preferred, u64) or a safe-integer number.
+- `outcomes`: exactly `ballsPerRound` (100) integers, each `-1` … `pockets − 1`.
+
+Response 200 (also when balls differ):
+```json
+{ "ok": false, "configVersion": "pachinko-v0.1.0", "seed": "…", "roundId": "1",
+  "resultHash": "<SHA-256 of the SERVER outcomes>", "serverOutcomes": [ ... ],
+  "mismatches": [ { "ballId": 0, "client": 3, "server": 0 } ] }
+```
+- `ok` = no mismatches. `serverOutcomes` / `resultHash` are authoritative (§4).
+
+Errors: 400 `{error}` bad JSON or field · 409 `{error}` `configVersion` differs from the
+service's · 413 body over 16 KiB · 404 other routes · 500 `{error: "internal error"}`.
+
+Replay CLI: `npm run replay -- <seed> [roundId]` prints end tick, `resultHash`, pocket
+tally and outcomes for one round (exit code 2 on bad arguments).
+

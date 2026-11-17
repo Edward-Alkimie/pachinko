@@ -20,7 +20,8 @@ Physics-decided, replay-verifiable pachinko. See `docs/` for the spec and plan.
 npm install
 npm test                    # all workspace tests
 npm run dev                 # frontend (code-server: http://<host>/absproxy/5180/)
-npm run dev:physics-service # physics service on :8100
+npm run dev:physics-service # physics service on :8100 (POST /verify)
+npm run replay -- <seed> [roundId]  # re-run one round, print outcomes + hash
 ```
 
 ## Start the backend
