@@ -133,8 +133,8 @@ the `u128` product cannot overflow.
 
 ## 8. How to run
 
-`contracts/pachinko/README.md` has build, test, the one-time testnet key setup (`.env`) and
-`npm run round:testnet`.
+Setup and running a round: root `README.md`. Build, test, keys and troubleshooting:
+`contracts/pachinko/README.md`.
 
 ## 9. End-to-end script (`scripts/`)
 

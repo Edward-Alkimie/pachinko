@@ -1,49 +1,68 @@
 # Project Pachinko
 
-Physics-decided, replay-verifiable pachinko. See `docs/` for the spec and plan.
+Physics-decided, replay-verifiable pachinko on Sui. See `docs/` for the spec and plan
+(`docs/ARCHITECTURE.md` maps how the parts connect).
 
 ## Layout
 
 | Folder | What | Stack |
 |---|---|---|
 | `physics/` | Shared deterministic physics (`runRound`) used by frontend and backend | TypeScript, Rapier 2D (deterministic) |
-| `frontend/` | Game UI: runs the round locally and draws it | React, TypeScript, Vite |
-| `physics-service/` | Backend copy of the physics: re-runs a seed, checks each ball's outcome | Node, TypeScript |
+| `frontend/` | Game UI: plays on-chain rounds, replays any seed, and draws the round | React, TypeScript, Vite |
+| `physics-service/` | Backend copy of the physics (re-runs a seed, checks outcomes) + the testnet operator | Node, TypeScript |
 | `backend/` | Rounds, seeds, result storage, API | Django, DRF |
 | `database/` | PostgreSQL setup notes and init scripts | PostgreSQL |
 | `contracts/` | Sui Move package: `round` (bet + seed), `verification` (submit, challenge, payout) | Move (Sui testnet) |
-| `chain/` | Shared Sui code: transaction builders, event/object readers, current testnet deployment ids | TypeScript, Sui TS SDK |
-| `scripts/` | Testnet tooling: deploy once, play one full on-chain round | TypeScript, Sui TS SDK |
+| `chain/` | Shared Sui code: transaction builders, event/object readers, testnet deployment ids | TypeScript, Sui TS SDK |
+| `scripts/` | Testnet tooling: deploy, play one full on-chain round | TypeScript, Sui TS SDK |
 | `docs/` | Spec and project plan | Markdown |
 
-## Run (Node parts)
+## Setup (first time only)
+
+All commands run from the repo root.
+
+### 1. Node and `.env`
 
 ```bash
 npm install
-npm test                    # all workspace tests
-npm run dev                 # frontend (code-server: http://<host>/absproxy/5180/)
-npm run dev:physics-service # physics service on :8100 (POST /verify)
-npm run replay -- <seed> [roundId]  # re-run one round, print outcomes + hash
-npm run deploy:testnet      # your own contracts + House → chain/src/deployments/<PACHINKO_DEPLOYMENT>.json (commit it)
-npm run round:testnet       # play one round on that deployment (needs SUI_PRIVATE_KEY in .env,
-                            # setup: contracts/pachinko/README.md)
-npm run operator            # operator: draws seeds, runs physics, submits, finalizes (keep running)
-npm run bet:testnet         # player side only: bet, then follow the round (needs the operator)
-                            # in the browser: "Play on-chain" (needs VITE_PACHINKO_DEPLOYMENT + a Sui wallet)
-npm run forged:testnet      # same, but the operator forges a jackpot and a challenge catches it
+cp .env.example .env
 ```
 
-## Start the backend
-
-First time only (from the repo root):
+### 2. Backend
 
 ```bash
 ~/.local/bin/uv venv --python 3.12 backend/.venv
 ~/.local/bin/uv pip install --python backend/.venv -r backend/requirements.txt
-cp .env.example .env    # then set DJANGO_SECRET_KEY in .env to a long random string
 ```
 
-Every time:
+Set `DJANGO_SECRET_KEY` in `.env` to a long random string.
+
+### 3. Sui testnet
+
+Each teammate has their own deployment (contracts + House), picked by name in `.env`.
+Details and troubleshooting: `contracts/pachinko/README.md`.
+
+1. `sui client active-address`, switch to testnet, and get test SUI from the faucet (about 0.2 SUI is enough).
+2. `sui keytool export --key-identity <your address>` → copy the `suiprivkey1…` value.
+3. Add to `.env`:
+   ```bash
+   SUI_PRIVATE_KEY=suiprivkey1...
+   PACHINKO_DEPLOYMENT=<name>        # e.g. kevin
+   VITE_PACHINKO_DEPLOYMENT=<name>   # e.g. kevin
+   ```
+4. `npm run deploy:testnet` → writes `chain/src/deployments/<name>.json`. Commit it (public ids only).
+
+## Run
+
+### Play a round on testnet
+
+1. Terminal 1: `npm run operator` (keep it running; it draws seeds, runs physics, submits, finalizes).
+2. Terminal 2: `npm run dev` → open `http://<host>/absproxy/5180/`.
+3. Under **On-chain play**, connect a wallet (e.g. Slush, on testnet, with some test SUI) → **Play on-chain**.
+
+No browser? `npm run bet:testnet` bets and follows the round in the terminal.
+
+### Backend
 
 ```bash
 cd backend
@@ -54,10 +73,19 @@ set -a && . ../.env && set +a      # load .env
 
 The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 
-## Run everything for development
+## Commands
 
-Start the backend (above) in one terminal and `npm run dev` in another, then open
-`http://<host>/absproxy/5180/`.
+| Command | What it does |
+|---|---|
+| `npm test` | All workspace tests |
+| `npm run dev` | Frontend (code-server: `http://<host>/absproxy/5180/`) |
+| `npm run dev:physics-service` | Physics service on :8100 (`POST /verify`) |
+| `npm run replay -- <seed> [roundId]` | Re-run one round, print outcomes + hash |
+| `npm run deploy:testnet` | Publish your contracts + House → `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
+| `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes |
+| `npm run bet:testnet` | Player side only: bet, then follow the round (needs the operator) |
+| `npm run round:testnet` | One full round from a script, playing both sides |
+| `npm run forged:testnet` | Same, but the operator forges a jackpot and a challenge catches it |
 
 ## Who owns what
 
