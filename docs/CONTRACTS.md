@@ -119,6 +119,24 @@ the `u128` product cannot overflow.
 - Losing rounds grow the pool, and wins can exceed the bet.
 - The admin calls `fund_house` once at setup for starting liquidity, and again whenever the pool runs low.
 
+### Who re-runs the physics: detect, then resolve
+
+The contract only checks that the outcomes match the hash, not that the physics was run. A wrong
+result is caught in two separate steps, and both re-run the same `runRound(seed, round_id)` at the
+round's `config_version`:
+
+| Step | Who | When | Does |
+|---|---|---|---|
+| 1. Detect | anyone: the player, or an optional watchdog | every submitted round, inside the challenge window | replays the public seed and compares its hash with the submitted one; on a mismatch, calls `challenge` with a bond |
+| 2. Resolve | arbiter: `AdminCap` now, a committee of staked verifiers later (§7 #5) | only after a challenge | re-runs the round and settles it (`settle_dispute`); the dishonest side loses its bond |
+
+Step 1 is needed: with no replay there is no challenge, and a forged result finalizes after the
+window. The player decides how to replay: the page (it already replays every round to draw it),
+`npm run replay`, or their own code. The page will compare hashes and offer a **Challenge** button
+within the window (planned). A watchdog process (own key, e.g.
+`CHALLENGER_PRIVATE_KEY`) does the same check when no player is watching. Because the simulation is
+deterministic, every dispute has one correct answer.
+
 ## 7. Open decisions
 
 | # | Question | Placeholder now |
@@ -127,7 +145,8 @@ the `u128` product cannot overflow.
 | 2 | Payout cap, and checking that the house can cover a bet when it is placed | none: `finalize` aborts (`EHouseInsolvent`) until the house is funded |
 | 3 | `withdraw_house` can take funds that pending rounds need | admin is trusted for now |
 | 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | none: the round waits |
-| 5 | 2-of-3 committee replacing `AdminCap` arbitration | `settle_dispute` is the single entry point it will reuse |
+| 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | `settle_dispute` is the single entry point it will reuse |
+| 8 | Who detects wrong results (§1, step 1): player, plus an optional watchdog | none yet: only `npm run forged:testnet` challenges |
 | 6 | Bond sizes and challenge window length | admin sets them per `House` |
 | 7 | Upgrade policy for the package (`UpgradeCap`) | kept by the publisher |
 
