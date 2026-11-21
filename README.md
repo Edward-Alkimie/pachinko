@@ -51,16 +51,23 @@ Details and troubleshooting: `contracts/pachinko/README.md`.
    VITE_PACHINKO_DEPLOYMENT=<name>   # e.g. kevin
    ```
 4. `npm run deploy:testnet` → writes `chain/src/deployments/<name>.json`. Commit it (public ids only).
+5. Committee (optional, to settle challenges by vote): create 3 more keys (`sui client new-address ed25519`,
+   then `sui keytool export --key-identity <address>`), add `VERIFIER_PRIVATE_KEYS=key1,key2,key3` to `.env`,
+   and run `npm run verifiers:setup` (funds them from your main key and registers them in the pool).
 
 ## Run
 
 ### Play a round on testnet
 
-1. Terminal 1: `npm run operator` (keep it running; it draws seeds, runs physics, submits, finalizes, and settles challenges).
-2. Terminal 2: `npm run dev` → open `http://<host>/absproxy/5180/`.
-3. Under **On-chain play**, connect a wallet (e.g. Slush, on testnet, with some test SUI) → **Play on-chain**.
-4. Once the balls land, the page compares its replay with the submitted result. While the challenge window is
-   open you can **Challenge** (try it with `OPERATOR_CHEAT=shortchange` in `.env`). The panel ends with your net.
+1. Terminal 1: `npm run operator` (keep it running; it draws seeds, runs physics, submits, finalizes).
+2. Terminal 2 (if you set up the committee): `npm run verifier` (draws the committee and votes on challenges).
+   Without it, challenges are settled by the admin fallback after the vote window.
+3. Terminal 3: `npm run dev` → open `http://<host>/absproxy/5180/`.
+4. Under **On-chain play**, connect a wallet (e.g. Slush, on testnet, with some test SUI) → **Play on-chain**.
+5. Once the balls land, the page compares its replay with the submitted result. While the challenge window is
+   open you can **Challenge** (try it with `OPERATOR_CHEAT=shortchange` in `.env`); the panel then shows the
+   committee's votes. It ends with your net. If the operator sends no result within 2 minutes of the seed, the
+   panel offers **refund my bet**.
 
 No browser? `npm run bet:testnet` bets, follows the round in the terminal, and challenges if the result doesn't match its replay.
 
@@ -84,9 +91,11 @@ The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 | `npm run dev:physics-service` | Physics service on :8100 (`POST /verify`) |
 | `npm run replay -- <seed> [roundId]` | Re-run one round, print outcomes + hash |
 | `npm run deploy:testnet` | Publish your contracts + House → `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
-| `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes. Also the arbiter: settles challenged rounds |
+| `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes. Also the fallback arbiter for challenges the committee leaves undecided |
 | `npm run operator` with `OPERATOR_CHEAT=shortchange` in `.env` | Demo: the operator forges every result (player paid nothing), so a challenge can catch it |
 | `npm run bet:testnet` | Player side only: bet, follow the round, replay it and challenge on a mismatch (needs the operator) |
+| `npm run verifiers:setup` | Fund and register the `VERIFIER_PRIVATE_KEYS` in your House's verifier pool (safe to re-run) |
+| `npm run verifier` | Verifier node: draws the committee of a challenged round and votes with every drawn key |
 
 ## Who owns what
 

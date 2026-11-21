@@ -42,22 +42,28 @@ create_round ──▶  draw_seed  ──▶    run runRound(seed) off-chain
                                                                 │
                                                      challenge (now < deadline)
                                                                 ▼
-                                                          CHALLENGED(3) ──resolve_by_admin──▶ FINALIZED(4)
+                                                          CHALLENGED(3) ──2 matching votes / admin fallback──▶ FINALIZED(4)
+
+ SEEDED(1) ──refund_unsubmitted (now ≥ submit_deadline, no result)──▶ REFUNDED(5)
 ```
 
 - There is no cancel function: once a bet is locked, the round can only move forward (fairness rule 3).
-- Every transition is one `public(package)` function in `round` that asserts the current
-  status and aborts with a named error (`ESeedAlreadyDrawn`, `ENotSeeded`, `ENotSubmitted`, `ENotChallenged`).
+  The one way back is the refund when the operator never submits, and its window is fixed per round
+  before the seed exists (§11.4), so the player cannot use it to undo a losing round.
+- Every transition asserts the current status and aborts with a named error (`ESeedAlreadyDrawn`,
+  `ENotSeeded`, `ENotSubmitted`, `ENotChallenged`); the ones `verification` drives are `public(package)`.
 
 ## 3. Objects
 
 | Object | Module | Kind | Fields |
 |---|---|---|---|
 | `AdminCap` | round | owned (publisher) | `id` |
-| `Game` | round | shared, one per package | `id`, `next_round_id: u64` (starts at 1), `config_version: String` |
-| `Round` | round | shared, one per round | `id`, `round_id: u64`, `player: address`, `config_version: String`, `seed: vector<u8>` (empty until drawn, then 32 bytes), `bet: Balance<SUI>`, `status: u8` |
+| `Game` | round | shared, one per package | `id`, `next_round_id: u64` (starts at 1), `config_version: String`, `submit_window_ms: u64` (starts at 120 000) |
+| `Round` | round | shared, one per round | `id`, `round_id: u64`, `player: address`, `config_version: String`, `seed: vector<u8>` (empty until drawn, then 32 bytes), `bet: Balance<SUI>`, `status: u8`, `submit_window_ms: u64` (copied from `Game`), `submit_deadline_ms: u64` (set by `draw_seed`) |
 | `OperatorCap` | verification | owned (issued by admin) | `id` |
-| `House` | verification | shared (created by admin) | `id`, `treasury: Balance<SUI>`, `multipliers_bps: vector<u64>` (one per pocket), `balls_per_round: u64`, `operator_bond: u64`, `challenger_bond: u64`, `challenge_window_ms: u64` |
+| `House` | verification | shared (created by admin) | `id`, `treasury: Balance<SUI>`, `multipliers_bps: vector<u64>` (one per pocket), `balls_per_round: u64`, `operator_bond: u64`, `challenger_bond: u64`, `challenge_window_ms: u64`, `vote_window_ms: u64`, `pool: Pool` |
+| `Pool` | committee | inside `House` | `stake: u64`, `members: vector<address>`, `verifiers: Table<address, Verifier { stake, open_duties }>` |
+| `Dispute` | committee | dynamic field on a challenged `Round` (key `DisputeKey`, removed when settled) | `deadline_ms: u64`, `excluded: vector<address>`, `committee: vector<address>`, `votes: vector<Vote { voter, result_hash }>` |
 | `Submission` | verification | dynamic field on `Round` (key `SubmissionKey`) | `house: ID`, `operator: address`, `outcomes: vector<u16>`, `result_hash: vector<u8>`, `deadline_ms: u64`, `operator_bond: Balance<SUI>`, `challenger: Option<address>`, `challenger_bond: Balance<SUI>` |
 
 - `Submission` stays on the round after finalizing (bonds withdrawn), so the final result can be read on-chain.
@@ -71,18 +77,22 @@ create_round ──▶  draw_seed  ──▶    run runRound(seed) off-chain
 | Function | Who | From → to |
 |---|---|---|
 | `create_round(game, bet: Coin<SUI>, ctx)` | player | — → BET_LOCKED (shares `Round`) |
-| `entry draw_seed(round, r: &Random, ctx)` (non-public) | anyone | BET_LOCKED → SEEDED |
-| `set_config_version(&AdminCap, game, version)` | admin | — (new rounds use it) |
+| `entry draw_seed(round, r: &Random, clock, ctx)` (non-public) | anyone | BET_LOCKED → SEEDED (starts the submit window) |
+| `refund_unsubmitted(round, clock, ctx)` | anyone (bet goes to the player) | SEEDED → REFUNDED, now ≥ `submit_deadline_ms` |
+| `set_config_version(&AdminCap, game, version)` / `set_submit_window(&AdminCap, game, ms)` | admin | — (new rounds use them) |
 
 `verification`
 | Function | Who | From → to |
 |---|---|---|
 | `issue_operator_cap(&AdminCap, recipient, ctx)` | admin | — |
-| `create_house(&AdminCap, multipliers_bps, balls_per_round, operator_bond, challenger_bond, challenge_window_ms, ctx)` | admin | — (shares `House`) |
+| `create_house(&AdminCap, multipliers_bps, balls_per_round, operator_bond, challenger_bond, challenge_window_ms, verifier_stake, vote_window_ms, ctx)` | admin | — (shares `House`) |
+| `join_pool(house, stake, ctx)` / `leave_pool(house, ctx): Coin<SUI>` | verifier | — |
 | `fund_house(house, coin)` / `withdraw_house(&AdminCap, house, amount, ctx): Coin<SUI>` | anyone / admin | — |
 | `submit_result(&OperatorCap, round, house, outcomes, result_hash, bond, clock, ctx)` | operator | SEEDED → SUBMITTED |
-| `challenge(round, house, bond, clock, ctx)` | anyone | SUBMITTED → CHALLENGED |
-| `resolve_by_admin(&AdminCap, round, house, correct_outcomes, ctx)` | admin | CHALLENGED → FINALIZED |
+| `challenge(round, house, bond, clock, ctx)` | anyone | SUBMITTED → CHALLENGED (opens the `Dispute`) |
+| `entry select_committee(round, house, r: &Random, clock, ctx)` (non-public) | anyone | CHALLENGED (draws 3 verifiers) |
+| `vote(round, house, outcomes, clock, ctx)` | drawn verifier | CHALLENGED → FINALIZED on the 2nd matching vote |
+| `resolve_by_admin(&AdminCap, round, house, correct_outcomes, clock, ctx)` | admin, after the vote deadline | CHALLENGED → FINALIZED |
 | `finalize(round, house, clock, ctx)` | anyone | SUBMITTED → FINALIZED |
 
 Checks in `submit_result`: `outcomes.length() == balls_per_round`, each outcome `< pockets` or `0xFFFF`,
@@ -92,17 +102,18 @@ Each function runs the status transition first, so a call in the wrong state abo
 `round` status error; any later check that fails reverts the whole transaction.
 
 Reads: `result_hash(config_version, seed, round_id, outcomes)` (SPEC §3 hash, same bytes as
-`hashRoundResult`), `submitted_hash(round)`, `treasury_value(house)`.
+`hashRoundResult`), `submitted_hash(round)`, `treasury_value(house)`, `pool(house)`, `dispute(round)`.
 
-**Arbitration, ready for the committee.** `resolve_by_admin` only checks the `AdminCap` and then calls one
-internal `settle_dispute(round, house, correct_outcomes)`. The arbiter posts the correct outcomes, and the
-verdict comes from comparing hashes, so the arbiter cannot rule "honest" while posting different outcomes.
-The 2-of-3 committee will call the same `settle_dispute` once two votes agree on a result.
+**Arbitration.** The committee's `vote` and the admin's `resolve_by_admin` both end in one internal
+`resolve(round, house, correct_outcomes, by_committee)`. The correct outcomes are posted, not a verdict:
+the verdict comes from comparing hashes, so no arbiter can rule "honest" while posting different outcomes.
+`committee::settle` then pays and slashes the drawn verifiers (§11.3).
 
 ## 5. Events
 
-One per state change: `RoundCreated`, `SeedDrawn`, `ResultSubmitted`, `Challenged`, `Resolved`
-(`resolve_by_admin` also emits `Finalized`), `Finalized`. Fields: `docs/SPEC.md` §7.
+One per state change: `RoundCreated`, `SeedDrawn` (+ `submit_deadline_ms`), `Refunded`, `ResultSubmitted`, `Challenged`, `Resolved`
+(a settled dispute also emits `Finalized`), `Finalized`, `CommitteeSelected`, `Voted`, and from `committee`
+(the pool): `VerifierJoined`, `VerifierLeft`, `VerifierSlashed`. Fields: `docs/SPEC.md` §7.
 
 ## 6. Payout (placeholder, one function: `verification::pay_out`)
 
@@ -128,7 +139,7 @@ round's `config_version`:
 | Step | Who | When | Does |
 |---|---|---|---|
 | 1. Detect | anyone: the player, or an optional watchdog | every submitted round, inside the challenge window | replays the public seed and compares its hash with the submitted one; on a mismatch, calls `challenge` with a bond |
-| 2. Resolve | arbiter: `AdminCap` now (run by `npm run operator`), a committee of staked verifiers later (§7 #5) | only after a challenge | re-runs the round and settles it (`settle_dispute`); the dishonest side loses its bond |
+| 2. Resolve | a committee of 3 staked verifiers drawn at random (§11); the `AdminCap` arbiter only as fallback | only after a challenge | re-run the round and vote; 2 matching votes settle it (`resolve`); the dishonest side loses its bond |
 
 Step 1 is needed: with no replay there is no challenge, and a forged result finalizes after the
 window. The player decides how to replay: the page (it already replays every round to draw it),
@@ -145,8 +156,8 @@ deterministic, every dispute has one correct answer.
 | 1 | Real multipliers / RTP per pocket (Phase 4 odds) | admin-set `multipliers_bps`; pool funding agreed (§6) |
 | 2 | Payout cap, and checking that the house can cover a bet when it is placed | none: `finalize` aborts (`EHouseInsolvent`) until the house is funded |
 | 3 | `withdraw_house` can take funds that pending rounds need | admin is trusted for now |
-| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | none: the round waits |
-| 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | `settle_dispute` is the single entry point it will reuse |
+| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | operator: refund after the round's submit window (§11.4, built; the player pays its gas, and the bonded `take_round` fix is designed but not built). Arbiter never resolving after a failed committee: still waits |
+| 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | built in Move (§11); verifier node, page and testnet run next |
 | 8 | Who detects wrong results (§1, step 1): player, plus an optional watchdog | the player: the page and `bet:testnet` compare hashes and challenge; no watchdog yet |
 | 6 | Bond sizes and challenge window length | admin sets them per `House` |
 | 7 | Upgrade policy for the package (`UpgradeCap`) | kept by the publisher |
@@ -161,8 +172,9 @@ Setup and running a round: root `README.md`. Build, test, keys and troubleshooti
 | File | Does |
 |---|---|
 | `src/deploy.ts` | `npm run deploy:testnet`: `deploy`, then saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
+| `src/verifiersSetup.ts` | `npm run verifiers:setup`: funds each `VERIFIER_PRIVATE_KEYS` key from the main key (stake + 0.05 SUI gas) and joins it to the pool; skips keys already in it |
 | `src/bet.ts` | `npm run bet:testnet`: player side only: `createRound`, then follow the round's status until FINALIZED. At SUBMITTED it replays the seed and compares hashes (§1 step 1); on a mismatch it challenges. Prints the verdict (if challenged) and the payout. Needs `npm run operator` running |
-| `src/steps.ts` | the steps the scripts sign (`@pachinko/chain` transactions): `deploy` (publish → create house → fund house) · `createRound` · `challenge`. The operator's steps (seed, submit, finalize) and the arbiter's live in `physics-service/src/operator/` |
+| `src/steps.ts` | the steps the scripts sign (`@pachinko/chain` transactions): `deploy` (publish → create house → fund house) · `createRound` · `challenge` · `fund` · `joinPool`. The operator's steps (seed, submit, finalize), the arbiter's and the verifiers' live in `physics-service/src/` |
 | `src/sui.ts` | `SuiGrpcClient` (testnet JSON-RPC is off), `execute` (sign, print digest + Suiscan link, fail on abort, wait for indexing), created-object and BCS-event readers, `buildPackage` (`sui move build --dump-bytecode-as-base64`) |
 | `src/env.ts` | settings from the repo-root `.env`; only `SUI_PRIVATE_KEY` is required |
 
@@ -172,7 +184,9 @@ player follows it. The two runs below from 2026-11-17 were made with the former 
 
 Deployments: each teammate has their own (`PACHINKO_DEPLOYMENT` in `.env` picks
 `chain/src/deployments/<name>.json`), so tests on one machine never touch another person's rounds.
-`kiana`: package `0x3738a27bc8e378210400ab634bf905cd75b43545db72f279f41ed72693c30bb0` (2026-11-17).
+`kiana`: package `0x3a6d1d421d136457f51d746df6f5bdcd8c926ec2382032957be70bdb409a0ebb` (2026-11-21, with the committee and
+the refund timeout; earlier `0x3738…0bb0`). After a contract change every teammate runs `npm run deploy:testnet` again:
+new structs can't be a package upgrade.
 The first two runs below are from earlier one-off publishes.
 
 ### Testnet run: honest round (2026-11-17)
@@ -299,3 +313,142 @@ Slush wallet `0x53d1…f332` (a different address from the operator `0x7584…06
 - **Challenging an honest result (round 18):** the wallet challenged (`F927rQiM…n4z5`) although the hashes matched
   (`11e91546…217f`). The arbiter found the operator honest (`AA2ZKTom…cGkX`): both bonds went to the operator,
   so the wallet lost its 0.01 SUI bond. Rounds 12, 14 and 15 were further forged results caught the same way.
+
+## 11. Committee and timeout (design 2026-11-21; both built in Move)
+
+Replaces the single admin arbiter (step 2 of §1, "resolve") with a committee of staked verifiers drawn at
+random after a challenge, and adds a timeout for an operator who never submits. Decided with Kiana:
+**3 drawn, 2 must agree · plain votes · wrong and missed votes are slashed · admin resolves only if the
+committee fails**. Everything below this line is a proposal to review (with Kevin for §11.4).
+
+### 11.1 Flow
+
+```
+SUBMITTED ── challenge(bond) ──▶ CHALLENGED, dispute deadline = now + vote_window_ms
+                                   │
+          select_committee(Random) │  separate tx (anyone; like draw_seed), draws 3 verifiers
+                                   │  from the pool, excluding the operator and the challenger
+                                   ▼
+               vote(outcomes) ×N   each drawn verifier re-runs the round and posts its outcomes;
+                                   │  the contract hashes them
+                 ┌─────────────────┴──────────────────────┐
+     2 votes with the same hash                 deadline passes without 2 agreeing votes
+     (before the deadline)                                │
+                 ▼                                         ▼
+   resolve(those outcomes)                     resolve_by_admin (fallback only) → resolve
+   → rewards and slashing (§11.3)              → the drawn verifiers who did not vote are slashed
+                 └───────────────────▶ FINALIZED ◀────────┘
+```
+
+Why the draw is its own transaction: if `challenge` drew the committee in the same call, a challenger
+could abort whenever the draw didn't suit them (test-and-abort, the same reason `draw_seed` is separate).
+
+### 11.2 New state
+
+| Where | What |
+|---|---|
+| `House` (new fields) | `verifier_stake` (exact amount to register), `vote_window_ms`, `submit_window_ms` (§11.4), and the pool: `verifiers: vector<address>` (drawn by index) + `stakes: Table<address, Verifier>` |
+| `Verifier` (in the table) | `stake: Balance<SUI>`, `open_duties: u64` (disputes it is drawn for and has not finished; it cannot leave the pool while > 0) |
+| `Dispute` (dynamic field on the `Round`, key `DisputeKey()`) | `deadline_ms`, `excluded` (operator, challenger, player, set at the challenge), `committee: vector<address>` (empty until drawn), `votes: vector<Vote { voter, result_hash }>` (the deciding vote's outcomes are the verdict, so votes keep only the hash) |
+
+### 11.3 Functions, rewards and slashing
+
+| Function | Who | Does |
+|---|---|---|
+| `register_verifier(house, stake)` | anyone | joins the pool; `stake` must equal `verifier_stake` |
+| `leave_pool(house)` | verifier | returns the stake; aborts while `open_duties > 0` |
+| `challenge(...)` (changed) | anyone | as today, plus creates the `Dispute` with its deadline |
+| `entry select_committee(round, house, r: &Random)` | anyone | CHALLENGED, no committee yet, pool has ≥ 3 eligible: draws 3 distinct verifiers, `open_duties += 1` each |
+| `vote(round, house, outcomes)` | a drawn verifier | before the deadline, once each; checks outcomes like `submit_result`, stores the hash; on the 2nd vote with the same hash, settles |
+| `resolve_by_admin(...)` (changed) | `AdminCap` | only after the deadline and only if the committee has not settled |
+
+Money when the committee settles (defaults; easy to change):
+
+- **Winning side** (operator or challenger): its own bond back + half of the loser's bond.
+- **Majority voters**: the other half of the loser's bond, plus the slashed stake, split equally.
+- **Minority voters** (voted, different hash): lose half their stake and leave the pool (the rest is refunded).
+- **The drawn verifier who had not voted yet** when 2 agreed: no reward, no slash (its vote was not needed).
+- **Committee fails** (no 2 agreeing votes by the deadline): drawn verifiers who did not vote lose half their
+  stake and leave the pool; the admin fallback settles the bonds as today (winner takes both).
+- **A verifier drawn for two disputes** and slashed in one has left the pool; when the other settles it is
+  neither slashed again nor freed (and a verifier that rejoined meanwhile never drops below 0 duties).
+- The player is always paid from the correct outcomes, as today.
+
+New events: `CommitteeSelected { round, committee, deadline_ms }`, `Voted { round, voter, result_hash }`
+(verification), `VerifierJoined`, `VerifierLeft`, `VerifierSlashed { verifier, amount }` (committee).
+`Resolved` gains `by_committee: bool`.
+
+### 11.4 Timeout: the operator never submits (`round` module, agreed with Kevin)
+
+- **Never seeded:** no timeout needed. `draw_seed` is open to anyone, so the player can draw the seed.
+- **Seeded, never submitted:** `draw_seed` sets `submit_deadline_ms = now + submit_window_ms`. After it,
+  anyone may call `round::refund_unsubmitted(round, clock)`: the bet goes back to the player, status
+  `REFUNDED` (5), event `Refunded`. There is no operator bond to take yet (it is posted at submit), so a
+  stalling operator only loses the round. A late result is still accepted as long as nobody has refunded.
+- **The window is fixed per round, before the seed.** The admin sets `submit_window_ms` on the `Game`
+  (`set_submit_window`, starts at 2 minutes), and `create_round` copies it into the `Round`. The first draft
+  read the window from a `House` passed to the refund, but a round is not tied to a House until a result is
+  submitted: a player could pass their own House with a 1 ms window, see the public seed, simulate it, and
+  refund only losing rounds. Copying the window at bet time closes that.
+- **Limits (for the report):**
+  - **The player pays the refund's gas** (about 0.002 SUI), although the operator is the one that failed.
+  - **A colluding operator could stall on purpose** on a colluding player's losing rounds. Today operator and
+    House are the same party, so it has no reason to.
+- **Designed fix, not built (time):** the operator *takes* the round with a bond. `take_round(&OperatorCap, round,
+  house, bond, Random, Clock)` replaces the open `draw_seed`, draws the seed, ties the round to that House and
+  locks the operator bond (which then also covers forgery, so `submit_result` takes none). On a missed submit
+  deadline anyone may refund: the bet goes back to the player with most of the bond, and the caller gets a small
+  tip from it, so sending the refund pays for itself and a stalling operator always loses money. A short
+  timeout before the seed lets the player reclaim a round no operator took (nothing is bonded yet then).
+
+### 11.5 Off-chain pieces (built)
+
+- **Verifier node** (`physics-service`, `npm run verifier`, own `VERIFIER_PRIVATE_KEY`): on `Challenged`,
+  calls `select_committee` if nobody has; on `CommitteeSelected` naming its address, runs `runRound` and
+  calls `vote`. Same loop shape as the operator and arbiter.
+- **Arbiter** (in `npm run operator`): becomes the fallback only; it waits for the dispute deadline.
+- **Page:** after a challenge, shows the drawn committee and each vote against the page's own replay, then the
+  verdict (by the committee or the admin fallback). After a missed submit deadline it offers **refund my bet**.
+- **Demo:** 3 verifier keys funded from the main address (stake + gas each), e.g. `npm run verifiers:setup`
+  to create, fund and register them.
+
+### 11.6 Cost and limits (for the report)
+
+- **Interface change:** new `House` fields and `create_house` arguments, new functions and events, the new
+  `Round` field and status. Struct changes can't be a package upgrade, so every teammate redeploys
+  (`npm run deploy:testnet`) and the frontend and operator move to the new package.
+- **Pool honesty:** on testnet the whole pool is ours, so random selection protects nothing here. It only
+  helps when the pool is large and independent and the stake is worth more than a bribe.
+- **Copying votes:** with plain votes a lazy verifier can copy an earlier on-chain vote instead of
+  re-running; commit-reveal would stop that (not chosen, for time).
+- **Admin fallback** keeps one trusted party as a last resort when the committee fails.
+
+### Testnet runs: refund timeout and admin fallback (2026-11-21)
+
+Deployment `kiana`, package `0x3a6d…0ebb` (committee + timeout), no verifiers in the pool yet.
+
+| Run | What happened | Digests |
+|---|---|---|
+| Round 1, honest | operator + `bet:testnet`: hashes matched (`e137840f…258b`), finalized after the window | seed `5NiQ3jGd…`, submit `CPWwobY8…`, finalize `2fVUt6Mg…` |
+| Round 2, refund | no operator: bet + seed, waited out the 2-minute submit window, `refund_unsubmitted` → status 5, 0.01 SUI back to the player | bet `A7Xs3ocF…`, seed `HZXSzxh2…`, refund `6V7o6VrG…` |
+| Round 3, admin fallback | operator shortchanged, `bet:testnet` challenged (`4XwWqqiZ…`); no committee could be drawn, so 63 s later (vote window + 3 s margin) the arbiter resolved it (`B2Z3hHcy…`): operator forged, `by_committee = false`, both bonds (0.02 SUI) to the challenger, player paid from the true outcomes | seed `8krfNUxG…`, submit `FiwEKdnP…` |
+
+### Testnet run: committee settles a forged round (2026-11-21)
+
+Deployment `kiana` (`0x3a6d…0ebb`), 3 verifiers registered with `npm run verifiers:setup`, `npm run operator` with
+`OPERATOR_CHEAT=shortchange`, `npm run verifier`, and `npm run bet:testnet` as the player.
+
+| Step (round 4) | Who | Digest |
+|---|---|---|
+| bet | player | `BULwoXLB7Kw1CdzCG6ZfZqAe3jWN4Pm5157vUUfXM5My` |
+| draw seed | operator | `3MZN9srroF1GvVV4MHRYMHHKZvzuLtpEuoyaybQWQJzZ` |
+| submit, forged (every ball "never landed") | operator | `75kuWRsxvcc55J4tdVAUiT29W9JqqVCYM4Tasvk69etS` |
+| challenge (replay `80e450ec…` ≠ submitted `f67ac0f2…`) | player | `9tEvPt2i4cRg8gAtZnmenzijLWQFaLQRypbkBazWqoPx` |
+| select committee (`sui::random`) | verifier `0x941b…2071` | `6Aw1AzzSTUBs88Ujm1uhVGa3vki2sFuBD9wUto8KXZhS` |
+| vote | verifier `0x941b…2071` | `GY8ZCRMfCpdKu99k2JNEwyEkoPNuZHhpsQzps9XFvZkz` |
+| vote (2nd matching: settles) | verifier `0x312d…555d` | `aRtrKWQ6NV867ujKBZKfTw2EstbCW3iBEwoVqtBheXk` |
+
+- **Verdict:** operator forged, `by_committee = true`, 4 s after the challenge. The challenger got 0.015 SUI (own
+  bond + half the operator's), the two voters split the other 0.005, and the player was paid from the true outcomes.
+- **Third verifier** (`0xc87c…3a12`): its vote arrived after the round was settled and aborted (`ENoDispute`); it is
+  freed without reward or slash, as designed. The node now stops voting once a vote settles the round.

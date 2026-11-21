@@ -31,8 +31,11 @@ The deploying key holds that deployment's caps, so:
 
 - **Operator:** `npm run operator` must sign with the key that owns the `OperatorCap`. Set
   `OPERATOR_PRIVATE_KEY` in `.env` if that is not `SUI_PRIVATE_KEY`.
-- **Arbiter:** if that key also owns the `AdminCap` (normal: the deploying key), the same process
-  settles challenged rounds with `resolve_by_admin`. Otherwise it logs `arbiter off`.
+- **Arbiter (fallback):** if that key also owns the `AdminCap` (normal: the deploying key), the same
+  process settles challenged rounds the committee leaves undecided, after the vote deadline, with
+  `resolve_by_admin`. Otherwise it logs `arbiter off`.
+- **Committee:** `npm run verifiers:setup` funds the `VERIFIER_PRIVATE_KEYS` from the deploying key and
+  registers them; `npm run verifier` runs them. A redeploy starts with an empty pool, so run setup again.
 - **Challenge demo:** run the operator with `OPERATOR_CHEAT=shortchange`, then play from the page
   (or `bet:testnet`) and challenge the mismatch. A browser wallet is a second address, so the bond
   transfer shows up as a real transfer.

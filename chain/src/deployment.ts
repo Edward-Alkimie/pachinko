@@ -11,6 +11,10 @@ export interface HouseSettings {
   readonly operatorBondMist: string
   readonly challengerBondMist: string
   readonly challengeWindowMs: string
+  /** Exact stake a verifier posts to join the pool. */
+  readonly verifierStakeMist: string
+  /** How long the committee has to vote after a challenge. */
+  readonly voteWindowMs: string
 }
 
 export interface Deployment {
@@ -44,6 +48,8 @@ export function parseDeployment(value: unknown): Deployment {
     d?.house?.operatorBondMist,
     d?.house?.challengerBondMist,
     d?.house?.challengeWindowMs,
+    d?.house?.verifierStakeMist,
+    d?.house?.voteWindowMs,
     ...(d?.house?.multipliersBps ?? []),
   ]
   if (d?.network !== 'testnet') throw new Error('deployment: network must be "testnet"')

@@ -161,7 +161,7 @@ deploy:testnet → chain/src/deployments/<PACHINKO_DEPLOYMENT>.json
   setUpHouse                         ──────▶ issue_operator_cap, create_house; fund_house
 a round (player + operator, Flow G)
 createRound(bet coin)                ──────▶ round::create_round      → BET_LOCKED    RoundCreated (round_id, config_version)
-drawSeed (separate tx)               ──────▶ round::draw_seed(Random) → SEEDED        SeedDrawn (seed)
+drawSeed (separate tx)               ──────▶ round::draw_seed(Random, Clock) → SEEDED SeedDrawn (seed, submit_deadline_ms)
 runRound(seed, round_id)  (physics/, off-chain)
 submitResult(outcomes, hash, bond)   ──────▶ verification::submit_result → SUBMITTED  ResultSubmitted (deadline_ms)
                                               └─ result_hash = sha2_256(SPEC §3 bytes) must match
@@ -180,7 +180,7 @@ createRoundTx → sign ───────────────────
                                                                                nextAction(fetchRound) = drawSeed → drawSeedTx
 fetchRound every 2 s: status / seed  ◀─────── SEEDED ◀─────────────────────────  nextAction = submit → runRound(seed) → submitResultTx
 replay hash vs fetchSubmission hash           SUBMITTED (window) ◀──────────── nextAction = wait until deadline + 3 s
-  └─ challengeTx (player decides) ─────────▶ CHALLENGED ─────────────────────▶ arbiter: runRound → resolveByAdminTx
+  └─ challengeTx (player decides) ─────────▶ CHALLENGED ─────────────────────▶ committee votes; after the vote deadline: arbiter fallback → resolveByAdminTx
 findFinalized + findResolved → net  ◀──────── FINALIZED ◀───────────────────── nextAction = finalize → finalizeTx
 ```
 
@@ -191,11 +191,16 @@ Then the panel compares the replay hash with the submitted one (`replayCheck`) a
 window is open. The wallet signs the bet and, if the player chooses, the challenge.
 
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
-picks up where it stopped. Challenged rounds are left to the arbiter.
+picks up where it stopped. Challenged rounds are left to the committee (and the arbiter fallback).
 
-**Arbiter** (same process, when the key also holds the `AdminCap`): `listEvents(Challenged)` → round still
-CHALLENGED → `runRound(seed)` → `resolveByAdminTx(true outcomes)`. The contract compares hashes, gives both
-bonds to the honest side and pays the player from the true outcomes. Operator and arbiter take turns in one
+**Committee** (`npm run verifier`, keys in `VERIFIER_PRIVATE_KEYS`): `listEvents(Challenged)` → no committee yet →
+`selectCommitteeTx` (draws 3 with `sui::random`) → each drawn key: `runRound(seed)` → `voteTx(outcomes)`; the
+second matching vote settles the round on-chain (`Resolved.by_committee = true`).
+
+**Arbiter** (fallback; same process, when the key also holds the `AdminCap`): `listEvents(Challenged)` → wait
+for the dispute's vote deadline (+ 3 s) → round still CHALLENGED (the committee did not decide) → `runRound(seed)`
+→ `resolveByAdminTx(true outcomes)`. The contract compares hashes, gives both bonds to the honest side and pays
+the player from the true outcomes. Operator and arbiter take turns in one
 loop, one transaction at a time, so they never compete for the key's gas coin.
 
 ---
@@ -246,11 +251,11 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `readCookie` / `ApiError` | services/auth.ts | cookie lookup; failed request (status 0 = unreachable) | ✅ |
 | `useAuth` | hooks/useAuth.ts | sign-in state: loading → anonymous / authenticated; login, register, logout, clearError | ✅ |
 | `AuthPanel` | components/AuthPanel.tsx | login/register form (two modes) or "Signed in as …" + Log out | ✅ |
-| `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status by `stageOf`, replay check, **Challenge** (window open), round / bet / challenge links, verdict, wallet net table; off with a reason when no deployment is set | ✅ |
+| `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status by `stageOf`, replay check, **Challenge** (window open), the committee and its votes while challenged, **refund my bet** after a missed submit deadline, round / bet / challenge / refund links, verdict (committee or admin fallback), wallet net table; off with a reason when no deployment is set | ✅ |
 | `WalletPanel` | components/WalletPanel.tsx | "Connect <wallet>" per Sui wallet (dApp Kit `useWallets`), or address (explorer link) + Copy + Disconnect | ✅ |
-| `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `findFinalized` + `findResolved` (payout, verdict); `challenge()` signs `challengeTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / error | ✅ |
-| `stageOf` / `replayCheck` | hooks/useOnchainRound.ts | (pure) what the panel shows: `playing` while the board animates, else the chain phase; replay hash vs submitted → match / mismatch / unavailable | ✅ |
-| `settlement` | onchain/settlement.ts | (pure) final round → the wallet's lines (bet, challenge bond, payout, bonds won) and net | ✅ |
+| `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried; keeps `submitDeadlineMs`) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `fetchDispute` while challenged → `findFinalized` + `findResolved` (payout, verdict); `challenge()` / `refund()` sign `challengeTx` / `refundUnsubmittedTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / refunded / error | ✅ |
+| `stageOf` / `replayCheck` / `canRefund` / `committeeVotes` | hooks/useOnchainRound.ts | (pure) what the panel shows: `playing` while the board animates, else the chain phase; replay vs submitted → match / mismatch / unavailable; refund allowed (seeded, past the submit deadline); each drawn verifier's vote vs the replay → waiting / agrees / disagrees | ✅ |
+| `settlement` | onchain/settlement.ts | (pure) finished round → the wallet's lines (bet, challenge bond, payout, bond award; or bet + refund) and net | ✅ |
 | `ONCHAIN` / `selectDeployment` | onchain/deployment.ts | `VITE_PACHINKO_DEPLOYMENT` → that `chain/src/deployments/*.json` (Vite glob), or off + reason | ✅ |
 | `getDAppKit` | onchain/dappKit.ts | dApp Kit instance for testnet (gRPC client, Slush web wallet), created on first use | ✅ |
 
@@ -267,12 +272,16 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | replay CLI | src/cli.ts | `npm run replay -- <seed> [roundId]` | ✅ |
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
 | `nextAction` | src/operator/nextAction.ts | on-chain `RoundView` (+ deadline) → `drawSeed` / `submit` / `wait` / `finalize` / `drop` (pure) | ✅ |
-| `arbiterAction` | src/operator/nextAction.ts | on-chain `RoundView` → `resolve` (CHALLENGED, same physics version) / `drop` (pure) | ✅ |
+| `arbiterAction` | src/operator/nextAction.ts | on-chain `RoundView` + vote deadline → `wait` (until deadline + 3 s) / `resolve` (still CHALLENGED, same physics version) / `drop` (pure) | ✅ |
 | `createRoundFeed` → `next` | src/operator/roundFeed.ts | object ids of rounds in new events of one type (oldest-first cursor) | ✅ |
 | `createOperator` → `tick` | src/operator/operator.ts | poll `RoundCreated` events, advance each round one tx at a time, retry failures after 30 s | ✅ |
-| `createArbiter` → `tick` | src/operator/arbiter.ts | poll `Challenged` events, re-run each round, `resolve_by_admin` with the true outcomes, retry failures after 30 s | ✅ |
+| `createArbiter` → `tick` | src/operator/arbiter.ts | poll `Challenged` events; after the vote deadline, re-run any round still CHALLENGED and `resolve_by_admin` with the true outcomes; retry failures after 30 s | ✅ |
 | `parseCheat` / `forgeOutcomes` | src/operator/cheat.ts | demo only: `OPERATOR_CHEAT=shortchange` → every ball reported as never landed; the operator submits them with a matching hash | ✅ |
-| operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap` (and runs the arbiter if it also owns the `AdminCap`), polls every 2 s (Flow G) | ✅ |
+| operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap` (and runs the fallback arbiter if it also owns the `AdminCap`), polls every 2 s (Flow G) | ✅ |
+| `verifierAction` | src/verifier/nextVote.ts | on-chain `RoundView` + `DisputeView` + own address → `select` (no committee yet) / `vote` (drawn, not voted) / `done` (pure) | ✅ |
+| `createVerifier` → `tick` | src/verifier/verifier.ts | poll `Challenged` events; draw the committee once; every drawn key re-runs the round and votes; retry failures after 30 s | ✅ |
+| verifier CLI | src/verifier/main.ts | `npm run verifier`: keys from `VERIFIER_PRIVATE_KEYS`, reports which are in the pool, polls every 2 s | ✅ |
+| `loadRepoEnv` / `testnetClient` / `runUntilStopped` / `log` | src/onchain.ts | start-up shared by the operator and verifier CLIs: .env, gRPC client, one-role-at-a-time loop | ✅ |
 
 ### `backend/` (Django)
 
@@ -293,18 +302,23 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 
 | Function | Module | Does | Owner | Status |
 |---|---|---|---|---|
-| `create_round` | round | lock bet in a new shared `Round` (→ BET_LOCKED), emit `RoundCreated` | Kevin | ✅ |
-| `draw_seed` | round | non-public `entry`; 32 bytes from `sui::random` (→ SEEDED), emit `SeedDrawn` | Kevin | ✅ |
-| `set_config_version` | round | admin: physics version for new rounds | Kevin | ✅ |
+| `create_round` | round | lock bet in a new shared `Round` (→ BET_LOCKED), copies `config_version` + `submit_window_ms`, emit `RoundCreated` | Kevin | ✅ |
+| `draw_seed` | round | non-public `entry`; 32 bytes from `sui::random` (→ SEEDED), sets `submit_deadline_ms`, emit `SeedDrawn` | Kevin | ✅ |
+| `refund_unsubmitted` | round | no result by `submit_deadline_ms`: bet back to the player (SEEDED → REFUNDED), emit `Refunded` | Kevin (written by Kiana) | ✅ |
+| `set_config_version` / `set_submit_window` | round | admin: physics version / submit window for new rounds | Kevin | ✅ |
 | `mark_submitted` / `mark_challenged` / `finalize_unchallenged` / `finalize_disputed` | round | `public(package)` status transitions used by `verification` | Kevin | ✅ |
 | `issue_operator_cap` / `create_house` / `fund_house` / `withdraw_house` | verification | admin setup: operator, payout table, bonds, window, treasury | Kiana | ✅ |
 | `submit_result` | verification | operator posts outcomes + hash (checked with `result_hash`), locks bond, starts window (→ SUBMITTED) | Kiana | ✅ |
-| `challenge` | verification | anyone locks a bond before `deadline_ms` (→ CHALLENGED) | Kiana | ✅ |
+| `challenge` | verification | anyone locks a bond before `deadline_ms` (→ CHALLENGED), opens the `Dispute` | Kiana | ✅ |
+| `join_pool` / `leave_pool` | verification → committee | verifiers stake into / leave the `House` pool | Kiana | ✅ |
+| `select_committee` (entry, `Random`) | verification → `committee::draw` | draws 3 verifiers (not operator, challenger, player), separate tx after the challenge | Kiana | ✅ |
+| `vote` | verification → `committee::record_vote` | drawn verifier posts outcomes; the 2nd matching hash settles via `resolve` | Kiana | ✅ |
 | `finalize` | verification | after the window: `pay_out`, operator bond back (→ FINALIZED) | Kiana | ✅ |
-| `resolve_by_admin` → `settle_dispute` | verification | arbiter posts correct outcomes; hash compare decides; loser's bond to winner; `pay_out` (→ FINALIZED) | Kiana | ✅ |
+| `resolve_by_admin` | verification | fallback after the vote deadline: admin posts correct outcomes → `resolve` | Kiana | ✅ |
+| `resolve` → `committee::settle` | verification, committee | hash compare decides; bonds (committee: winner + half the loser's; fallback: winner takes both); rewards and slashes the drawn verifiers; `pay_out` (→ FINALIZED) | Kiana | ✅ |
 | `pay_out` | verification | placeholder payout rule (one function) | Kiana | ✅ |
 | `result_hash` | verification | SPEC §3 bytes → `sha2_256` (same as `hashRoundResult`) | Kiana | ✅ |
-| `submitted_hash` / `treasury_value` | verification | reads: stored result hash, house balance | Kiana | ✅ |
+| `submitted_hash` / `treasury_value` / `pool` / `dispute` | verification | reads: stored result hash, house balance, verifier pool, open dispute | Kiana | ✅ |
 
 ### `chain/` (`@pachinko/chain`, shared Sui code)
 
@@ -312,9 +326,9 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 |---|---|---|---|---|
 | `parseDeployment` | deployment.ts | JSON → checked `Deployment` (ids + House settings) | everything | ✅ |
 | `deploymentName` / `loadDeployment` / `saveDeployment` / `deploymentNames` | node.ts (`@pachinko/chain/node`) | `PACHINKO_DEPLOYMENT` → `deployments/<name>.json` (one per teammate) | scripts, operator | ✅ |
-| `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, frontend | ✅ |
-| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` (BCS) | operator, (next) frontend | ✅ |
-| event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, operator | ✅ |
+| `createRoundTx` / `drawSeedTx` / `refundUnsubmittedTx` / `submitResultTx` / `challengeTx` / `selectCommitteeTx` / `voteTx` / `resolveByAdminTx` / `finalizeTx` / `joinPoolTx` / `leavePoolTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, frontend | ✅ |
+| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `fetchDispute` / `parseDispute` / `fetchPoolMembers` / `parsePoolMembers` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` / `DisputeView`; House → pool members (BCS) | operator, arbiter, verifier, frontend | ✅ |
+| event layouts + `eventType` | events.ts | BCS event schemas (round, verification, committee), `0xpkg::module::Name` | scripts, operator, frontend | ✅ |
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
 | `signAndExecute` / `readEvent` | execute.ts | keypair + tx → executed tx (throws on abort, waits for indexing); decode one event | scripts, operator | ✅ |
 | `findFinalized` / `findResolved` | events.ts | round object id → its `Finalized` event (payout) / `Resolved` event (verdict, bond award), or `null` (ascending scan) | scripts, frontend | ✅ |
@@ -325,7 +339,8 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 |---|---|---|---|
 | `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy`, saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` | ✅ |
 | `main` / `checkResult` | src/bet.ts | `npm run bet:testnet`: player side only (create round, follow status); at SUBMITTED replays the seed, compares hashes, challenges on a mismatch; prints verdict + payout; needs a running operator | ✅ |
-| `deploy` / `createRound` / `challenge` | src/steps.ts | the steps the scripts sign: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |
+| `main` | src/verifiersSetup.ts | `npm run verifiers:setup`: for each `VERIFIER_PRIVATE_KEYS` not in the pool, `fund` (stake + gas from the main key) → `joinPool` | ✅ |
+| `deploy` / `createRound` / `challenge` / `fund` / `joinPool` | src/steps.ts | the steps the scripts sign: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |
 | `connect` / `execute` | src/sui.ts | gRPC client + signer; sign, print digest, fail on abort, wait for indexing | ✅ |
 | `buildPackage` / `publishedPackageId` / `createdObjectId` / `readEvent` | src/sui.ts | compiled modules for publish; ids of created objects; decode BCS events | ✅ |
 | `loadEnv` | src/env.ts | settings from `.env` (`SUI_PRIVATE_KEY` required) | ✅ |

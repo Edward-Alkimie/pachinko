@@ -25,7 +25,7 @@ import { challenge, createRound } from './steps'
 import { connect, type Sui } from './sui'
 
 const POLL_MS = 2_000
-const STATUS_NAME = ['BET_LOCKED', 'SEEDED', 'SUBMITTED', 'CHALLENGED', 'FINALIZED']
+const STATUS_NAME = ['BET_LOCKED', 'SEEDED', 'SUBMITTED', 'CHALLENGED', 'FINALIZED', 'REFUNDED']
 
 /** Replays the round and compares with the submitted hash; challenges on a mismatch. */
 async function checkResult(sui: Sui, deployment: Deployment, round: RoundView) {
@@ -52,25 +52,31 @@ async function main() {
 
   const round = await createRound(sui, env, deployment)
   let status = -1
-  while (status !== RoundStatus.Finalized) {
+  while (status !== RoundStatus.Finalized && status !== RoundStatus.Refunded) {
     const view = await fetchRound(sui.client, round.objectId)
     if (view.status !== status) {
       status = view.status
       const seed = status === RoundStatus.Seeded && view.seed ? `  seed ${toHex(view.seed)}` : ''
-      const note = status === RoundStatus.Challenged ? '  (waiting for the arbiter)' : ''
+      const note = status === RoundStatus.Challenged ? '  (waiting for the committee)' : ''
       console.log(`  ${new Date().toISOString()}  ${STATUS_NAME[status]}${seed}${note}`)
       if (status === RoundStatus.Submitted) await checkResult(sui, deployment, view)
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_MS))
   }
 
+  if (status === RoundStatus.Refunded) {
+    console.log(`\nround object     ${round.objectId}`)
+    console.log(`refunded         ${env.betMist} MIST (no result before the submit deadline)`)
+    return
+  }
   // A challenge can be settled between two polls, so look for the verdict instead of the status.
   const finalized = await findFinalized(sui.client, deployment.packageId, round.objectId)
   const resolved = await findResolved(sui.client, deployment.packageId, round.objectId)
   console.log(`\nround object     ${round.objectId}`)
   if (resolved) {
     const verdict = resolved.operator_honest ? 'operator honest' : 'operator forged'
-    console.log(`verdict          ${verdict}, bonds ${resolved.award} MIST → ${resolved.winner}`)
+    const by = resolved.by_committee ? 'committee' : 'admin fallback'
+    console.log(`verdict          ${verdict} (${by}), ${resolved.award} MIST → ${resolved.winner}`)
   }
   console.log(`bet → payout     ${env.betMist} → ${finalized?.payout ?? '?'} MIST`)
 }

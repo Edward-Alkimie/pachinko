@@ -28,6 +28,8 @@ export function setUpHouseTx(
       tx.pure.u64(house.operatorBondMist),
       tx.pure.u64(house.challengerBondMist),
       tx.pure.u64(house.challengeWindowMs),
+      tx.pure.u64(house.verifierStakeMist),
+      tx.pure.u64(house.voteWindowMs),
     ],
   })
   return tx
@@ -55,12 +57,22 @@ export function createRoundTx(d: Deployment, betMist: bigint): Transaction {
   return tx
 }
 
-/** Anyone (the operator in the app): draw the seed with sui::random. */
+/** Anyone (the operator in the app): draw the seed with sui::random; starts the submit window. */
 export function drawSeedTx(d: Deployment, roundObjectId: string): Transaction {
   const tx = new Transaction()
   tx.moveCall({
     target: `${d.packageId}::round::draw_seed`,
-    arguments: [tx.object(roundObjectId), tx.object.random()],
+    arguments: [tx.object(roundObjectId), tx.object.random(), tx.object.clock()],
+  })
+  return tx
+}
+
+/** Anyone: refund the player's bet when no result was submitted by the round's submit deadline. */
+export function refundUnsubmittedTx(d: Deployment, roundObjectId: string): Transaction {
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${d.packageId}::round::refund_unsubmitted`,
+    arguments: [tx.object(roundObjectId), tx.object.clock()],
   })
   return tx
 }
@@ -100,7 +112,32 @@ export function challengeTx(d: Deployment, roundObjectId: string): Transaction {
   return tx
 }
 
-/** Admin: settle a challenged round with the correct outcomes (physics encoding). */
+/** Anyone: draw the challenged round's committee with sui::random (its own transaction). */
+export function selectCommitteeTx(d: Deployment, roundObjectId: string): Transaction {
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${d.packageId}::verification::select_committee`,
+    arguments: [tx.object(roundObjectId), tx.object(d.houseId), tx.object.random(), tx.object.clock()],
+  })
+  return tx
+}
+
+/** Drawn verifier: vote the outcomes it computed (physics encoding). */
+export function voteTx(d: Deployment, roundObjectId: string, outcomes: readonly number[]): Transaction {
+  const tx = new Transaction()
+  tx.moveCall({
+    target: `${d.packageId}::verification::vote`,
+    arguments: [
+      tx.object(roundObjectId),
+      tx.object(d.houseId),
+      tx.pure.vector('u16', toOnchainOutcomes(outcomes)),
+      tx.object.clock(),
+    ],
+  })
+  return tx
+}
+
+/** Admin fallback, after the vote deadline: settle a challenged round with the correct outcomes. */
 export function resolveByAdminTx(
   d: Deployment,
   roundObjectId: string,
@@ -114,8 +151,31 @@ export function resolveByAdminTx(
       tx.object(roundObjectId),
       tx.object(d.houseId),
       tx.pure.vector('u16', toOnchainOutcomes(correctOutcomes)),
+      tx.object.clock(),
     ],
   })
+  return tx
+}
+
+/** Verifier: join the House's pool with the exact verifier stake. */
+export function joinPoolTx(d: Deployment): Transaction {
+  const tx = new Transaction()
+  const [stake] = tx.splitCoins(tx.gas, [BigInt(d.house.verifierStakeMist)])
+  tx.moveCall({
+    target: `${d.packageId}::verification::join_pool`,
+    arguments: [tx.object(d.houseId), stake],
+  })
+  return tx
+}
+
+/** Verifier: leave the pool; the returned stake goes to `recipient` (the verifier). */
+export function leavePoolTx(d: Deployment, recipient: string): Transaction {
+  const tx = new Transaction()
+  const [stake] = tx.moveCall({
+    target: `${d.packageId}::verification::leave_pool`,
+    arguments: [tx.object(d.houseId)],
+  })
+  tx.transferObjects([stake], recipient)
   return tx
 }
 

@@ -1,6 +1,7 @@
 /**
- * The on-chain steps the testnet scripts sign themselves: deploy (deploy:testnet), and the
- * player's bet and challenge (bet:testnet). The operator's steps live in physics-service.
+ * The on-chain steps the testnet scripts sign themselves: deploy (deploy:testnet), the player's
+ * bet and challenge (bet:testnet), and funding + registering verifiers (verifiers:setup). The
+ * operator's and verifiers' own steps live in physics-service.
  * Transactions and event layouts come from @pachinko/chain; each step prints its digest.
  */
 import { fileURLToPath } from 'node:url'
@@ -11,6 +12,7 @@ import {
   createRoundTx,
   eventType,
   fundHouseTx,
+  joinPoolTx,
   readEvent,
   setUpHouseTx,
   type Deployment,
@@ -38,6 +40,8 @@ function houseSettings(env: ScriptEnv): HouseSettings {
     operatorBondMist: String(env.operatorBondMist),
     challengerBondMist: String(env.challengerBondMist),
     challengeWindowMs: String(env.challengeWindowMs),
+    verifierStakeMist: String(env.verifierStakeMist),
+    voteWindowMs: String(env.voteWindowMs),
   }
 }
 
@@ -82,4 +86,17 @@ export async function createRound(sui: Sui, env: ScriptEnv, d: Deployment): Prom
 /** Disputes the submitted result with the challenger bond (must be before the deadline). */
 export async function challenge(sui: Sui, d: Deployment, round: OpenRound) {
   await execute(sui, 'challenge', challengeTx(d, round.objectId))
+}
+
+/** Sends `amountMist` from `sui` to `recipient` (e.g. a verifier's stake and gas). */
+export async function fund(sui: Sui, recipient: string, amountMist: bigint) {
+  const tx = new Transaction()
+  const [coin] = tx.splitCoins(tx.gas, [amountMist])
+  tx.transferObjects([coin], recipient)
+  await execute(sui, 'fund', tx)
+}
+
+/** `verifier` joins the House's pool with the deployment's exact stake. */
+export async function joinPool(verifier: Sui, d: Deployment) {
+  await execute(verifier, 'join pool', joinPoolTx(d))
 }

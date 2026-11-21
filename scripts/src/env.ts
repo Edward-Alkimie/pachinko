@@ -10,12 +10,16 @@ const ENV_FILE = fileURLToPath(new URL('../../.env', import.meta.url))
 export interface ScriptEnv {
   /** `suiprivkey1…` (Bech32). Used as admin, operator and player in this demo. */
   readonly privateKey: string
+  /** Demo verifier keys (`VERIFIER_PRIVATE_KEYS`, comma-separated); empty when unset. */
+  readonly verifierPrivateKeys: readonly string[]
   readonly grpcUrl: string
   readonly betMist: bigint
   readonly houseFundsMist: bigint
   readonly operatorBondMist: bigint
   readonly challengerBondMist: bigint
   readonly challengeWindowMs: bigint
+  readonly verifierStakeMist: bigint
+  readonly voteWindowMs: bigint
   /** Payout per pocket in basis points (10 000 = 1×), one per physics pocket. */
   readonly multipliersBps: readonly bigint[]
 }
@@ -38,12 +42,18 @@ export function loadEnv(): ScriptEnv {
   }
   return {
     privateKey,
+    verifierPrivateKeys: optional('VERIFIER_PRIVATE_KEYS', '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean),
     grpcUrl: optional('SUI_GRPC_URL', 'https://fullnode.testnet.sui.io:443'),
     betMist: mist('PACHINKO_BET_MIST', '10000000'),
     houseFundsMist: mist('PACHINKO_HOUSE_FUNDS_MIST', '50000000'),
     operatorBondMist: mist('PACHINKO_OPERATOR_BOND_MIST', '10000000'),
     challengerBondMist: mist('PACHINKO_CHALLENGER_BOND_MIST', '10000000'),
     challengeWindowMs: mist('PACHINKO_CHALLENGE_WINDOW_MS', '30000'),
+    verifierStakeMist: mist('PACHINKO_VERIFIER_STAKE_MIST', '20000000'),
+    voteWindowMs: mist('PACHINKO_VOTE_WINDOW_MS', '60000'),
     multipliersBps: optional('PACHINKO_MULTIPLIERS_BPS', '10000,10000,10000,10000,10000,10000,10000')
       .split(',')
       .map((part, i) => {

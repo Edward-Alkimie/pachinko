@@ -4,16 +4,20 @@
  * `onSeed` plays it with the normal board animation. Nothing from the chain is shown while the balls
  * are still falling (`stageOf`). After that the panel compares the submitted result with the page's
  * own replay, and the player may challenge while the window is open (anyone may; on a match the
- * warning says the bond would be lost). The verdict and the wallet's net show once the round is final.
- * Off unless a deployment is configured.
+ * warning says the bond would be lost). A challenged round shows its committee and their votes; the
+ * verdict and the wallet's net show once the round is final. If the operator misses the round's submit
+ * deadline, the player can take the bet back. Off unless a deployment is configured.
  */
 import { useCurrentAccount } from '@mysten/dapp-kit-react'
 import { TESTNET_EXPLORER_OBJECT, TESTNET_EXPLORER_TX, type Deployment } from '@pachinko/chain'
 import {
   BET_MIST,
+  canRefund,
+  committeeVotes,
   replayCheck,
   stageOf,
   useOnchainRound,
+  type CommitteeVote,
   type OnchainStage,
   type ReplayCheck,
 } from '../hooks/useOnchainRound'
@@ -35,12 +39,19 @@ const STAGE_TEXT: Record<OnchainStage, string> = {
   playing: 'Seed drawn on-chain. Playing your round…',
   waitingResult: "Waiting for the operator's result…",
   verifying: 'Result submitted. Challenge window open.',
-  challenged: 'Result challenged. Waiting for the arbiter…',
+  challenged: 'Result challenged. A committee of staked verifiers re-runs the round and votes.',
   final: 'Round final. What it did to your wallet:',
+  refunded: 'The operator sent no result in time, so your bet was refunded.',
   error: 'Something went wrong.',
 }
 
-const IDLE: readonly OnchainStage[] = ['idle', 'final', 'error']
+const VOTE_TEXT: Record<CommitteeVote, string> = {
+  waiting: 'waiting for its vote…',
+  agrees: 'voted ✓ same result as your replay',
+  disagrees: 'voted ✗ a different result',
+}
+
+const IDLE: readonly OnchainStage[] = ['idle', 'final', 'refunded', 'error']
 
 const CHECK_TEXT: Record<Exclude<ReplayCheck, null>, string> = {
   match: '✓ Your replay matches the submitted result.',
@@ -58,6 +69,14 @@ function signedSui(mist: bigint): string {
   return mist > 0n ? `+${sui(mist)}` : `−${sui(-mist)}`
 }
 
+function shortAddress(address: string): string {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+
+function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString()
+}
+
 export function OnchainPanel({ onSeed }: Props) {
   if (!ONCHAIN.enabled) {
     return <section className="onchain-panel off">{ONCHAIN.reason}</section>
@@ -68,7 +87,7 @@ export function OnchainPanel({ onSeed }: Props) {
 function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; deployment: Deployment }) {
   const dAppKit = getDAppKit()
   const account = useCurrentAccount({ dAppKit })
-  const { state, play, challenge, replayAgain } = useOnchainRound(deployment, dAppKit, onSeed)
+  const { state, play, challenge, refund, replayAgain } = useOnchainRound(deployment, dAppKit, onSeed)
   const stage = stageOf(state)
   const busy = !IDLE.includes(stage)
   // Chain results stay hidden while the board is playing (stage 'playing').
@@ -77,7 +96,9 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
   const windowOpen = state.deadlineMs !== null && Date.now() < state.deadlineMs
   // Anyone may challenge while the window is open; the check only tells the player how risky it is.
   const showChallenge = stage === 'verifying' && !state.challengeDigest
-  const result = stage === 'final' ? settlement(state, account?.address ?? null, BET_MIST, bondMist) : null
+  const refundable = stage === 'waitingResult' && canRefund(state, Date.now())
+  const finished = stage === 'final' || stage === 'refunded'
+  const result = finished ? settlement(state, account?.address ?? null, BET_MIST, bondMist) : null
 
   return (
     <section className="onchain-panel" aria-label="On-chain play">
@@ -95,9 +116,9 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
         <button
           className={check === 'mismatch' ? 'challenge' : 'challenge secondary'}
           onClick={() => void challenge()}
-          disabled={!account || state.challenging || !windowOpen}
+          disabled={!account || state.walletAction !== null || !windowOpen}
         >
-          {state.challenging
+          {state.walletAction === 'challenge'
             ? 'Confirm the challenge in your wallet…'
             : windowOpen
               ? `Challenge (${sui(bondMist)} bond)`
@@ -107,7 +128,33 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
       {showChallenge && check === 'match' && windowOpen && (
         <p className="hint">Anyone can challenge, but the result matches your replay: a challenge would lose the bond.</p>
       )}
-      {state.challengeError && <p className="error">{state.challengeError}</p>}
+      {stage === 'waitingResult' && state.submitDeadlineMs > 0 && !refundable && (
+        <p className="hint">If no result arrives by {clockTime(state.submitDeadlineMs)}, you can take your bet back.</p>
+      )}
+      {refundable && (
+        <button className="challenge" onClick={() => void refund()} disabled={!account || state.walletAction !== null}>
+          {state.walletAction === 'refund'
+            ? 'Confirm the refund in your wallet…'
+            : `The operator missed its deadline: refund my bet (${sui(BET_MIST)})`}
+        </button>
+      )}
+      {stage === 'challenged' && state.dispute && (
+        <div className="committee">
+          {state.dispute.committee.length === 0 ? (
+            <p className="hint">Drawing 3 verifiers at random…</p>
+          ) : (
+            <ul>
+              {committeeVotes(state.dispute, state.replayHash).map(({ verifier, vote }) => (
+                <li key={verifier} className={vote}>
+                  <span className="mono">{shortAddress(verifier)}</span> {VOTE_TEXT[vote]}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="hint">2 matching votes decide. Voting ends {clockTime(state.dispute.deadlineMs)}.</p>
+        </div>
+      )}
+      {state.actionError && <p className="error">{state.actionError}</p>}
       {state.roundObjectId && (
         <dl className="round-info">
           <dt>Round</dt>
@@ -129,7 +176,17 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
           {state.deadlineMs !== null && stage === 'verifying' && (
             <>
               <dt>Window ends</dt>
-              <dd>{new Date(state.deadlineMs).toLocaleTimeString()}</dd>
+              <dd>{clockTime(state.deadlineMs)}</dd>
+            </>
+          )}
+          {state.refundDigest && (
+            <>
+              <dt>Refund tx</dt>
+              <dd className="mono">
+                <a href={`${TESTNET_EXPLORER_TX}/${state.refundDigest}`} target="_blank" rel="noreferrer">
+                  {state.refundDigest.slice(0, 10)}…
+                </a>
+              </dd>
             </>
           )}
           {state.challengeDigest && (
@@ -146,9 +203,10 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
             <>
               <dt>Verdict</dt>
               <dd>
-                {state.resolution.operatorHonest ? 'Operator honest' : 'Operator forged the result'}; bonds{' '}
+                {state.resolution.operatorHonest ? 'Operator honest' : 'Operator forged the result'}
+                {state.resolution.byCommittee ? ' (by the committee)' : ' (by the admin fallback)'};{' '}
                 {sui(state.resolution.awardMist)} →{' '}
-                {state.resolution.winner === account?.address ? 'you' : `${state.resolution.winner.slice(0, 8)}…`}
+                {state.resolution.winner === account?.address ? 'you' : shortAddress(state.resolution.winner)}
               </dd>
             </>
           )}

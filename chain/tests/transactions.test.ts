@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type { Deployment } from '../src/deployment'
-import { createRoundTx, drawSeedTx, finalizeTx, submitResultTx } from '../src/transactions'
+import {
+  challengeTx,
+  createRoundTx,
+  drawSeedTx,
+  finalizeTx,
+  joinPoolTx,
+  leavePoolTx,
+  refundUnsubmittedTx,
+  resolveByAdminTx,
+  selectCommitteeTx,
+  submitResultTx,
+  voteTx,
+} from '../src/transactions'
 
 const D: Deployment = {
   network: 'testnet',
@@ -15,6 +27,8 @@ const D: Deployment = {
     operatorBondMist: '10',
     challengerBondMist: '10',
     challengeWindowMs: '30000',
+    verifierStakeMist: '20',
+    voteWindowMs: '60000',
   },
 }
 
@@ -33,5 +47,12 @@ describe('transaction builders', () => {
       `${pkg}::verification::submit_result`,
     ])
     expect(moveCallTargets(finalizeTx(D, '0x9'))).toEqual([`${pkg}::verification::finalize`])
+    expect(moveCallTargets(refundUnsubmittedTx(D, '0x9'))).toEqual([`${pkg}::round::refund_unsubmitted`])
+    expect(moveCallTargets(challengeTx(D, '0x9'))).toEqual([`${pkg}::verification::challenge`])
+    expect(moveCallTargets(selectCommitteeTx(D, '0x9'))).toEqual([`${pkg}::verification::select_committee`])
+    expect(moveCallTargets(voteTx(D, '0x9', [0, -1]))).toEqual([`${pkg}::verification::vote`])
+    expect(moveCallTargets(resolveByAdminTx(D, '0x9', [0, -1]))).toEqual([`${pkg}::verification::resolve_by_admin`])
+    expect(moveCallTargets(joinPoolTx(D))).toEqual([`${pkg}::verification::join_pool`])
+    expect(moveCallTargets(leavePoolTx(D, '0x7'))).toEqual([`${pkg}::verification::leave_pool`])
   })
 })

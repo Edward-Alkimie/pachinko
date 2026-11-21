@@ -1,13 +1,14 @@
 import { fromHex } from '@mysten/sui/utils'
 import { describe, expect, it } from 'vitest'
-import { RoundStatus, parseRound, parseSubmission } from '../src/objects'
+import { RoundStatus, parseDispute, parseRound, parseSubmission } from '../src/objects'
 
-// Real BCS bytes read from testnet after the honest run of 2026-11-17
-// (round 0x5fea…45bc, package 0xaed7…034f). They pin our layouts to what Move actually stores.
+// Real BCS bytes read from testnet. The Round: round 1 of the 2026-11-21 deployment (package 0xfee9…e202),
+// seeded, with its submit deadline. The Submission: the honest run of 2026-11-17 (layout unchanged since).
+// They pin our layouts to what Move actually stores.
 const ROUND_BCS = [
-  '5feaf35149795ae4476996173b3afa86cc142a7da99906d60cdca1ef54af45bc0100000000000000758488b191a77182',
-  '3ea215efe10e44d7f8112524e994f3fcf686afdce89106630f70616368696e6b6f2d76302e312e30200d2af0c6cb3efd',
-  '150c8ab10b5d832bb5c25dc4f3a4325f746a3189e334cca3e0000000000000000004',
+  '188afd7176dde1185a6f5bd537c5e0ecafdf63b0909a7ff7266ef4b2019369640100000000000000758488b191a77182',
+  '3ea215efe10e44d7f8112524e994f3fcf686afdce89106630f70616368696e6b6f2d76302e312e3020ee539a4b641185',
+  'fad98ba6aee595191cec39d81cba6252278db43978b653da60809698000000000001c0d4010000000000e03283ffa1010000',
 ].join('')
 const SUBMISSION_BCS = [
   '3220f0027d376f7af2b71a9fc83339e78a6e22534788e4075b42ed32ef98548c758488b191a771823ea215efe10e44d7',
@@ -19,18 +20,27 @@ const SUBMISSION_BCS = [
   'd0546fbce57950ff6b02f635a9eaa10100000000000000000000000000000000000000',
 ].join('')
 
+// The Dispute of round 3 (0xfa71…8577) while it was challenged, before any committee (empty pool).
+// The operator, challenger and player were the same test key, so `excluded` repeats it.
+const DISPUTE_BCS = [
+  'a96f8fffa101000003758488b191a771823ea215efe10e44d7f8112524e994f3fcf686afdce8910663758488b191a77182',
+  '3ea215efe10e44d7f8112524e994f3fcf686afdce8910663758488b191a771823ea215efe10e44d7f8112524e994f3fc',
+  'f686afdce89106630000',
+].join('')
+
 describe('parseRound', () => {
-  it('decodes a finalized testnet round', () => {
+  it('decodes a seeded testnet round with its submit deadline', () => {
     const round = parseRound(fromHex(ROUND_BCS))
-    expect(round.objectId).toBe('0x5feaf35149795ae4476996173b3afa86cc142a7da99906d60cdca1ef54af45bc')
+    expect(round.objectId).toBe('0x188afd7176dde1185a6f5bd537c5e0ecafdf63b0909a7ff7266ef4b201936964')
     expect(round.roundId).toBe(1n)
     expect(round.player).toBe('0x758488b191a771823ea215efe10e44d7f8112524e994f3fcf686afdce8910663')
     expect(round.configVersion).toBe('pachinko-v0.1.0')
     expect(round.seed && Buffer.from(round.seed).toString('hex')).toBe(
-      '0d2af0c6cb3efd150c8ab10b5d832bb5c25dc4f3a4325f746a3189e334cca3e0',
+      'ee539a4b641185fad98ba6aee595191cec39d81cba6252278db43978b653da60',
     )
-    expect(round.betMist).toBe(0n) // the bet left the round when it was finalized
-    expect(round.status).toBe(RoundStatus.Finalized)
+    expect(round.betMist).toBe(10_000_000n)
+    expect(round.status).toBe(RoundStatus.Seeded)
+    expect(round.submitDeadlineMs).toBe(1_795_288_150_752)
   })
 })
 
@@ -46,5 +56,14 @@ describe('parseSubmission', () => {
     expect(submission.operator).toBe('0x758488b191a771823ea215efe10e44d7f8112524e994f3fcf686afdce8910663')
     expect(submission.challenger).toBeNull()
     expect(submission.deadlineMs).toBeGreaterThan(0)
+  })
+})
+
+describe('parseDispute', () => {
+  it('decodes an open testnet dispute before its committee is drawn', () => {
+    const dispute = parseDispute(fromHex(DISPUTE_BCS))
+    expect(dispute.deadlineMs).toBe(1_795_288_952_745)
+    expect(dispute.committee).toEqual([])
+    expect(dispute.votes).toEqual([])
   })
 })

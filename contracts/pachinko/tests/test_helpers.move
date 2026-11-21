@@ -3,6 +3,7 @@
 module pachinko::test_helpers;
 
 use pachinko::round::{Self, Game, Round};
+use sui::clock::Clock;
 use sui::coin;
 use sui::random::Random;
 use sui::sui::SUI;
@@ -45,7 +46,17 @@ public fun draw_seed(scenario: &mut Scenario, caller: address) {
     scenario.next_tx(caller);
     let mut round = scenario.take_shared<Round>();
     let random = scenario.take_shared<Random>();
-    round.draw_seed(&random, scenario.ctx());
+    let clock = scenario.take_shared<Clock>();
+    round.draw_seed(&random, &clock, scenario.ctx());
+    ts::return_shared(clock);
     ts::return_shared(random);
     ts::return_shared(round);
+}
+
+/// Moves the shared clock forward by `ms`.
+public fun advance_clock(scenario: &mut Scenario, ms: u64) {
+    scenario.next_tx(ADMIN);
+    let mut clock = scenario.take_shared<Clock>();
+    clock.increment_for_testing(ms);
+    ts::return_shared(clock);
 }

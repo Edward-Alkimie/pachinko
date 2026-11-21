@@ -9,11 +9,17 @@ export {
 export type { Deployment, HouseSettings } from './deployment'
 export {
   Challenged,
+  CommitteeSelected,
   Finalized,
+  Refunded,
   ResultSubmitted,
   Resolved,
   RoundCreated,
   SeedDrawn,
+  VerifierJoined,
+  VerifierLeft,
+  VerifierSlashed,
+  Voted,
   eventType,
   findFinalized,
   findResolved,
@@ -23,12 +29,16 @@ export { readEvent, signAndExecute } from './execute'
 export type { Executed } from './execute'
 export {
   RoundStatus,
+  fetchDispute,
+  fetchPoolMembers,
   fetchRound,
   fetchSubmission,
+  parseDispute,
+  parsePoolMembers,
   parseRound,
   parseSubmission,
 } from './objects'
-export type { RoundView, SubmissionView } from './objects'
+export type { DisputeView, RoundView, SubmissionView } from './objects'
 export { ONCHAIN_OUTCOME_NONE, fromOnchainOutcomes, toOnchainOutcomes } from './outcomes'
 export {
   challengeTx,
@@ -36,7 +46,12 @@ export {
   drawSeedTx,
   finalizeTx,
   fundHouseTx,
+  joinPoolTx,
+  leavePoolTx,
+  refundUnsubmittedTx,
   resolveByAdminTx,
+  selectCommitteeTx,
   setUpHouseTx,
   submitResultTx,
+  voteTx,
 } from './transactions'
