@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ClientWithCoreApi } from '@mysten/sui/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as chain from '@pachinko/chain'
@@ -45,35 +45,73 @@ function mockSettledRound() {
   } as unknown as RoundHistory)
 }
 
-function renderPanel(boardBusy: boolean, onWatch = vi.fn()) {
+type PlayOnBoard = (seedHex: string, roundId: bigint) => Promise<string | null>
+
+/** A board whose replay lands at once with the golden hash. */
+const landingBoard = () => vi.fn<PlayOnBoard>(async () => GOLDEN_HASH)
+
+function renderPanel(boardBusy: boolean, playOnBoard = landingBoard()) {
   render(
     <VerifyPanel
       deployment={DEPLOYMENT}
       client={{} as ClientWithCoreApi}
       initialRound={1n}
       onRoundChange={vi.fn()}
-      onWatch={onWatch}
+      playOnBoard={playOnBoard}
       boardBusy={boardBusy}
     />,
   )
-  return onWatch
+  return playOnBoard
 }
 
 afterEach(cleanup)
 
 describe('VerifyPanel', () => {
-  it('shows the verdict and plays the verified round on a free board, once', async () => {
+  it('plays the round on a free board by itself, and checks it with that replay', async () => {
     mockSettledRound()
-    const onWatch = renderPanel(false)
+    const playOnBoard = renderPanel(false)
     expect(await screen.findByText(/Verified: the player was paid/)).toBeTruthy()
-    await waitFor(() => expect(onWatch).toHaveBeenCalledWith(GOLDEN_SEED_HEX, 1n))
-    expect(onWatch).toHaveBeenCalledTimes(1)
+    expect(playOnBoard).toHaveBeenCalledWith(GOLDEN_SEED_HEX, 1n)
+    expect(playOnBoard).toHaveBeenCalledTimes(1)
+    // "This page's replay" and "Payout used" both show the golden hash; the payout is marked ✓.
+    expect(screen.getAllByText('06e86fe4…8151')).toHaveLength(2)
+    expect(screen.getByText('✓')).toBeTruthy()
   }, 30_000)
 
-  it('does not take over a busy board; "Watch again" is there instead', async () => {
+  it('waits for a click when the board is busy with another round', async () => {
     mockSettledRound()
-    const onWatch = renderPanel(true)
-    expect(await screen.findByRole('button', { name: 'Watch again' })).toBeTruthy()
-    expect(onWatch).not.toHaveBeenCalled()
+    const playOnBoard = renderPanel(true)
+    expect(await screen.findByText(/busy with another round/)).toBeTruthy()
+    expect(screen.getByText(/replaying stops it/)).toBeTruthy()
+    expect(playOnBoard).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replay on the board' }))
+    expect(await screen.findByText(/Verified: the player was paid/)).toBeTruthy()
+    expect(playOnBoard).toHaveBeenCalledTimes(1)
+  }, 30_000)
+
+  it('says so when the replay is stopped before the balls land', async () => {
+    mockSettledRound()
+    renderPanel(false, vi.fn<PlayOnBoard>(async () => null))
+    expect(await screen.findByText(/stopped before the balls landed/)).toBeTruthy()
+    expect(screen.queryByText(/Verified/)).toBeNull()
+  }, 30_000)
+
+  it('shows the seed and hashes shortened, and copies the full seed', async () => {
+    mockSettledRound()
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderPanel(true)
+    const seed = await screen.findByText('00010203…1e1f')
+    expect(seed.getAttribute('title')).toBe(GOLDEN_SEED_HEX)
+    expect(screen.getByText('06e86fe4…8151').getAttribute('title')).toBe(GOLDEN_HASH)
+    expect(screen.getByText('npm run replay -- 00010203…1e1f 1')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy seed' }))
+    expect(writeText).toHaveBeenCalledWith(GOLDEN_SEED_HEX)
+    expect(await screen.findByText('Copied')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy replay command' }))
+    expect(writeText).toHaveBeenLastCalledWith(`npm run replay -- ${GOLDEN_SEED_HEX} 1`)
   }, 30_000)
 })

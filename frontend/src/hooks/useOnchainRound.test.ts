@@ -11,6 +11,7 @@ import {
   committeeVotes,
   phaseFor,
   replayCheck,
+  settledCheck,
   stageOf,
   useOnchainRound,
 } from './useOnchainRound'
@@ -22,6 +23,7 @@ vi.mock('@pachinko/chain', async (importOriginal) => ({
   fetchDispute: vi.fn(),
   findFinalized: vi.fn(),
   findResolved: vi.fn(),
+  findCommitteeVotes: vi.fn(),
 }))
 
 const id = (byte: string) => `0x${byte.repeat(32)}`
@@ -265,6 +267,43 @@ describe('useOnchainRound', () => {
     expect(committeeVotes(dispute!, replayHash).map((c) => c.vote)).toEqual(['agrees', 'waiting', 'waiting'])
   })
 
+  it('keeps the committee on screen once the round is final, with the deciding vote', async () => {
+    const statuses = [RoundStatus.Challenged, RoundStatus.Finalized]
+    vi.mocked(chain.fetchRound).mockImplementation(async () => view(statuses.shift() ?? RoundStatus.Finalized))
+    const honest = new Uint8Array(Buffer.from(HONEST_HASH, 'hex'))
+    vi.mocked(chain.fetchDispute).mockResolvedValue({
+      deadlineMs: 90_000,
+      committee: ['0xa', '0xb', '0xc'],
+      votes: [{ voter: '0xa', resultHash: honest }],
+    })
+    vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '0' } as Awaited<ReturnType<typeof chain.findFinalized>>)
+    vi.mocked(chain.findResolved).mockResolvedValue({
+      operator_honest: true,
+      winner: '0x3',
+      award: '10',
+      by_committee: true,
+    } as Awaited<ReturnType<typeof chain.findResolved>>)
+    // The Dispute object is gone after the deciding vote; the events still hold every vote.
+    vi.mocked(chain.findCommitteeVotes).mockResolvedValue({
+      deadlineMs: 90_000,
+      committee: ['0xa', '0xb', '0xc'],
+      votes: [
+        { voter: '0xa', resultHash: honest },
+        { voter: '0xb', resultHash: honest },
+      ],
+    })
+
+    const { result } = renderHook(() => useOnchainRound(DEPLOYMENT, fakeDAppKit(), async () => HONEST_HASH))
+    await act(async () => {
+      void result.current.play()
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+
+    const { phase, dispute, replayHash } = result.current.state
+    expect(phase).toBe('final')
+    expect(committeeVotes(dispute!, replayHash).map((c) => c.vote)).toEqual(['agrees', 'agrees', 'waiting'])
+  })
+
   it('lets the player refund the bet when the operator misses the submit deadline', async () => {
     const deadline = Date.now() + 1_000
     vi.mocked(chain.fetchRound).mockResolvedValue(view(RoundStatus.Seeded, deadline))
@@ -354,5 +393,27 @@ describe('phaseFor', () => {
     expect(phaseFor(RoundStatus.Challenged)).toBe('challenged')
     expect(phaseFor(RoundStatus.Finalized)).toBe('final')
     expect(phaseFor(RoundStatus.Refunded)).toBe('refunded')
+  })
+})
+
+describe('settledCheck', () => {
+  const verdict = (operatorHonest: boolean) => ({ operatorHonest, winner: '0x3', awardMist: 10n, byCommittee: true })
+
+  it('once final after a challenge, the verdict answers the check', () => {
+    expect(settledCheck('mismatch', true, verdict(false))).toBe('overturned')
+    expect(settledCheck('match', true, verdict(true))).toBe('upheld')
+  })
+
+  it('once final with no challenge, says what paid out', () => {
+    expect(settledCheck('mismatch', true, null)).toBe('unchallenged')
+    expect(settledCheck('match', true, null)).toBe('paid')
+    expect(settledCheck('unavailable', true, null)).toBe('unavailable')
+  })
+
+  it('keeps the plain check before the round is final, or when a verdict contradicts the replay', () => {
+    expect(settledCheck('mismatch', false, null)).toBe('mismatch')
+    expect(settledCheck('match', false, null)).toBe('match')
+    expect(settledCheck('mismatch', true, verdict(true))).toBe('mismatch')
+    expect(settledCheck('unavailable', true, verdict(false))).toBe('unavailable')
   })
 })

@@ -68,8 +68,10 @@ Details and troubleshooting: `contracts/pachinko/README.md`.
    open you can **Challenge** (try it with `OPERATOR_CHEAT=shortchange` in `.env`); the panel then shows the
    committee's votes. It ends with your net. If the operator sends no result within 2 minutes of the seed, the
    panel offers **refund my bet**.
-6. **Verify** (top of the page): enter any round number to check it from the chain alone. Your browser
-   replays the seed, compares it with what was submitted and what was paid, and plays the round on the board.
+6. **Verify** (top of the page): enter any round number to see what the chain records for it (seed, submitted
+   and paid result, challenge, committee votes, payout) and watch it replay on the board. When the balls land, the
+   page marks each hash ✓/✗ against that replay. If the board is busy with an on-chain round, click
+   **Replay on the board**. To check without trusting the website, copy the `npm run replay` command.
    Share a round as `#verify/<round>`.
    Under it, **Advanced: replay any seed** plays any seed and round id, on-chain or not.
 

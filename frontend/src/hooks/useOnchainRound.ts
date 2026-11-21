@@ -8,7 +8,9 @@
  *          → operator submits; challenge window runs           phase 'verifying'
  *            the page compares its replay hash with the submitted one (replayCheck);
  *            on a mismatch the player may challenge() with the bond (docs/CONTRACTS.md §1, step 1)
+ *            once final, the check says what paid out (settledCheck: overturned / upheld / unchallenged / paid)
  *          → challenged: the committee is drawn and votes      phase 'challenged' (dispute shown)
+ *            (once final, the votes are read back from events: findCommitteeVotes, so they stay shown)
  *          → finalized (after the window, by the committee, or by the admin fallback); payout
  *            from Finalized, verdict from Resolved if the round was challenged   phase 'final'
  *
@@ -31,6 +33,7 @@ import {
   fetchDispute,
   fetchRound,
   fetchSubmission,
+  findCommitteeVotes,
   findFinalized,
   findResolved,
   refundUnsubmittedTx,
@@ -98,7 +101,7 @@ export interface OnchainState {
   readonly submittedHash: string | null
   /** When the bet becomes refundable if no result was submitted (`0` until seeded). */
   readonly submitDeadlineMs: number
-  /** The committee vote, while the round is challenged. */
+  /** The committee vote: live while the round is challenged, then as it was settled. */
   readonly dispute: DisputeState | null
   /** The wallet is signing this action. */
   readonly walletAction: WalletAction | null
@@ -169,6 +172,24 @@ export function replayCheck(
   if (state.replay === 'interrupted') return 'unavailable'
   if (state.replay !== 'done' || state.replayHash === null) return null
   return state.replayHash === state.submittedHash ? 'match' : 'mismatch'
+}
+
+/**
+ * The replay check once the round is final, saying what the payout used:
+ * - `overturned`: the replay disagreed, a challenge followed, and the committee overturned the result;
+ * - `upheld`: the replay agreed, and the committee upheld the result after someone challenged it;
+ * - `unchallenged`: the replay disagreed, but nobody challenged in time, so the submitted result paid out;
+ * - `paid`: the replay agreed, nobody challenged, and the submitted result paid out.
+ * Before the round is final, or when a verdict contradicts the replay, the plain check stays (with its ✗).
+ */
+export type SettledCheck = ReplayCheck | 'overturned' | 'upheld' | 'unchallenged' | 'paid'
+
+export function settledCheck(check: ReplayCheck, final: boolean, resolution: Resolution | null): SettledCheck {
+  if (!final) return check
+  if (resolution === null) return check === 'mismatch' ? 'unchallenged' : check === 'match' ? 'paid' : check
+  if (check === 'mismatch' && !resolution.operatorHonest) return 'overturned'
+  if (check === 'match' && resolution.operatorHonest) return 'upheld'
+  return check
 }
 
 /** The player may take the bet back: seeded, no result, and the submit deadline has passed. */
@@ -264,7 +285,21 @@ export function useOnchainRound(
               byCommittee: resolved.by_committee,
             }
           : null
-        setState((s) => ({ ...s, phase, payoutMist: BigInt(finalized.payout), resolution }))
+        // The Dispute object is gone once settled (with the deciding vote): read the final votes from events,
+        // so the committee stays on screen with every vote that decided the round.
+        const settledDispute = resolved ? await findCommitteeVotes(client, deployment.packageId, objectId) : null
+        const dispute = settledDispute && {
+          deadlineMs: settledDispute.deadlineMs,
+          committee: settledDispute.committee,
+          votes: settledDispute.votes.map((v) => ({ voter: v.voter, resultHash: toHex(v.resultHash) })),
+        }
+        setState((s) => ({
+          ...s,
+          phase,
+          payoutMist: BigInt(finalized.payout),
+          resolution,
+          dispute: dispute ?? s.dispute,
+        }))
         return { settled: true, seedPlayed }
       }
       setState((s) => ({ ...s, phase, submitDeadlineMs }))

@@ -188,14 +188,18 @@ In the browser, `useOnchainRound` passes the seed to the normal `useRound.start(
 round plays on the same board as a local one. `start` resolves with the result only once playback ends, and
 `stageOf` holds every chain result back until then, so the panel never shows the outcome before the balls land.
 Then the panel compares the replay hash with the submitted one (`replayCheck`) and shows **Challenge** while the
-window is open. The wallet signs the bet and, if the player chooses, the challenge.
+window is open. Once the round is final, `settledCheck` turns that check into what paid out
+(overturned / upheld after a challenge; unchallenged / paid without one), so a resolved mismatch no longer shows as an open ✗.
+The panel words it as "this page's replay" and shows the `npm run replay` command (`ReplayCommand`) for a check that
+doesn't trust the page. The wallet signs the bet and, if the player chooses, the challenge.
 
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
 picks up where it stopped. Challenged rounds are left to the committee (and the arbiter fallback).
 
 **Committee** (`npm run verifier`, keys in `VERIFIER_PRIVATE_KEYS`): `listEvents(Challenged)` → no committee yet →
 `selectCommitteeTx` (draws 3 with `sui::random`) → each drawn key: `runRound(seed)` → `voteTx(outcomes)`; the
-second matching vote settles the round on-chain (`Resolved.by_committee = true`).
+second matching vote settles the round on-chain (`Resolved.by_committee = true`). That transaction removes the
+`Dispute` object, so the browser reads the final votes back with `findCommitteeVotes` and keeps them on screen.
 
 **Arbiter** (fallback; same process, when the key also holds the `AdminCap`): `listEvents(Challenged)` → wait
 for the dispute's vote deadline (+ 3 s) → round still CHALLENGED (the committee did not decide) → `runRound(seed)`
@@ -252,13 +256,14 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `useAuth` | hooks/useAuth.ts | sign-in state: loading → anonymous / authenticated; login, register, logout, clearError | ✅ |
 | `AuthPanel` | components/AuthPanel.tsx | login/register form (two modes) or "Signed in as …" + Log out | ✅ |
 | `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status by `stageOf`, replay check, **Challenge** (window open), the committee and its votes while challenged, **refund my bet** after a missed submit deadline, round / bet / challenge / refund links, verdict (committee or admin fallback), wallet net table; off with a reason when no deployment is set | ✅ |
+| `CopyValue` / `ReplayCommand` | components/CopyValue.tsx | long value shown shortened (full on hover) + Copy of the full value; the copyable `npm run replay -- <seed> <round>` line (Verify page, OnchainPanel) | ✅ |
 | `WalletPanel` | components/WalletPanel.tsx | "Connect <wallet>" per Sui wallet (dApp Kit `useWallets`), or address (explorer link) + Copy + Disconnect | ✅ |
-| `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried; keeps `submitDeadlineMs`) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `fetchDispute` while challenged → `findFinalized` + `findResolved` (payout, verdict); `challenge()` / `refund()` sign `challengeTx` / `refundUnsubmittedTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / refunded / error | ✅ |
+| `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried; keeps `submitDeadlineMs`) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `fetchDispute` while challenged → `findFinalized` + `findResolved` (payout, verdict), and `findCommitteeVotes` if it was challenged (the settled votes stay shown); `challenge()` / `refund()` sign `challengeTx` / `refundUnsubmittedTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / refunded / error | ✅ |
 | `stageOf` / `replayCheck` / `canRefund` / `committeeVotes` | hooks/useOnchainRound.ts | (pure) what the panel shows: `playing` while the board animates, else the chain phase; replay vs submitted → match / mismatch / unavailable; refund allowed (seeded, past the submit deadline); each drawn verifier's vote vs the replay → waiting / agrees / disagrees | ✅ |
 | `settlement` | onchain/settlement.ts | (pure) finished round → the wallet's lines (bet, challenge bond, payout, bond award; or bet + refund) and net | ✅ |
-| `VerifyPanel` | components/VerifyPanel.tsx | Verify page: round number → summary verdict, round / player / bet / seed, your replay vs submitted and paid hashes, challenger, committee votes vs your replay, verdict, payout or refund; then plays the round on the board by itself (unless the board is busy with another round), **Watch again** any time | ✅ |
-| `useVerifyRound` | hooks/useVerifyRound.ts | verify(n): `findRoundByNumber` → `fetchRound` + `fetchRoundHistory` → replay the seed with `runRound` in the browser | ✅ |
-| `verdictOf` / `paidHash` / `parseRoute` / `routeHash` | onchain/verify.ts | (pure) round status + history + replay → verified / caught / upheld / paidMismatch / refunded / inProgress; the `#verify/<round>` route | ✅ |
+| `VerifyPanel` | components/VerifyPanel.tsx | Verify page: round number → what the chain records (round / player / bet / seed, Operator submitted / Payout used hashes with **Copy**, challenger, committee votes, verdict, payout or refund) and the round plays on the board by itself; when the balls land, that replay's hash is the check (This page's replay row, ✓/✗ marks, summary verdict). A board busy with another round (not a Verify replay) waits for **Replay on the board**; `ReplayCommand` for a check that doesn't trust the page | ✅ |
+| `useVerifyRound` | hooks/useVerifyRound.ts | verify(n): `findRoundByNumber` → `fetchRound` + `fetchRoundHistory`; replayOnBoard(): `playOnBoard(seed, round_id)` (App's `useRound.start`) resolves with the replay hash once the balls land → `replayHash` (replay none → playing → done / interrupted); `ownReplayPlaying` | ✅ |
+| `verdictOf` / `paidHash` / `parseRoute` / `routeHash` | onchain/verify.ts | (pure) round status + history + replay → verified / caught / upheld / unchallenged (wrong result, nobody challenged) / paidMismatch (wrong even after a challenge) / refunded / inProgress; the `#verify/<round>` route | ✅ |
 | `ONCHAIN` / `selectDeployment` | onchain/deployment.ts | `VITE_PACHINKO_DEPLOYMENT` → that `chain/src/deployments/*.json` (Vite glob), or off + reason | ✅ |
 | `getDAppKit` | onchain/dappKit.ts | dApp Kit instance for testnet (gRPC client, Slush web wallet), created on first use | ✅ |
 
@@ -335,6 +340,7 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
 | `signAndExecute` / `readEvent` | execute.ts | keypair + tx → executed tx (throws on abort, waits for indexing); decode one event | scripts, operator | ✅ |
 | `findFinalized` / `findResolved` | events.ts | round object id → its `Finalized` event (payout) / `Resolved` event (verdict, bond award), or `null` (ascending scan) | scripts, frontend | ✅ |
+| `findCommitteeVotes` | events.ts | round object id → its committee + votes (`DisputeView`) from `CommitteeSelected` + `Voted` events, or `null`; for settled rounds, whose `Dispute` object is gone | OnchainPanel (final) | ✅ |
 | `findRoundByNumber` / `fetchRoundHistory` | events.ts | round number → its `RoundCreated`; round object id → `RoundHistory` (submitted, challenged, committee, votes, resolved, finalized, refunded) from its events | Verify page | ✅ |
 
 ### `scripts/` (testnet tooling)

@@ -22,6 +22,7 @@ export {
   Voted,
   eventType,
   fetchRoundHistory,
+  findCommitteeVotes,
   findFinalized,
   findResolved,
   findRoundByNumber,

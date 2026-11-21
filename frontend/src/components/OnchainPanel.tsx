@@ -3,9 +3,10 @@
  * The operator (physics-service) draws the seed, submits and finalizes; once the seed is on-chain,
  * `onSeed` plays it with the normal board animation. Nothing from the chain is shown while the balls
  * are still falling (`stageOf`). After that the panel compares the submitted result with the page's
- * own replay, and the player may challenge while the window is open (anyone may; on a match the
- * warning says the bond would be lost). A challenged round shows its committee and their votes; the
- * verdict and the wallet's net show once the round is final. If the operator misses the round's submit
+ * own replay (worded as "this page's replay", with the `npm run replay` command for a check that does
+ * not trust the page), and the player may challenge while the window is open (anyone may; on a match the
+ * warning says the bond would be lost). A challenged round shows its committee and their votes, and keeps them on screen once the round
+ * is final (with the deciding vote); the verdict and the wallet's net show once the round is final. If the operator misses the round's submit
  * deadline, the player can take the bet back. Off unless a deployment is configured.
  */
 import { useCurrentAccount } from '@mysten/dapp-kit-react'
@@ -15,15 +16,17 @@ import {
   canRefund,
   committeeVotes,
   replayCheck,
+  settledCheck,
   stageOf,
   useOnchainRound,
   type CommitteeVote,
   type OnchainStage,
-  type ReplayCheck,
+  type SettledCheck,
 } from '../hooks/useOnchainRound'
 import { ONCHAIN } from '../onchain/deployment'
 import { settlement } from '../onchain/settlement'
 import { getDAppKit } from '../onchain/dappKit'
+import { ReplayCommand } from './CopyValue'
 import { WalletPanel } from './WalletPanel'
 import './OnchainPanel.css'
 
@@ -47,16 +50,22 @@ const STAGE_TEXT: Record<OnchainStage, string> = {
 
 const VOTE_TEXT: Record<CommitteeVote, string> = {
   waiting: 'waiting for its vote…',
-  agrees: 'voted ✓ same result as your replay',
+  agrees: "voted ✓ same result as this page's replay",
   disagrees: 'voted ✗ a different result',
 }
 
 const IDLE: readonly OnchainStage[] = ['idle', 'final', 'refunded', 'error']
 
-const CHECK_TEXT: Record<Exclude<ReplayCheck, null>, string> = {
-  match: '✓ Your replay matches the submitted result.',
-  mismatch: '✗ Your replay does not match the submitted result.',
-  unavailable: 'Your replay was interrupted by another seed, so it was not checked.',
+const CHECK_TEXT: Record<Exclude<SettledCheck, null>, string> = {
+  match: "✓ This page's replay matches the submitted result.",
+  mismatch: "✗ This page's replay does not match the submitted result.",
+  unavailable: "This page's replay was interrupted by another seed, so it was not checked.",
+  paid: "✓ This page's replay matches the submitted result, and the round paid out from it.",
+  unchallenged:
+    "✗ This page's replay did not match the submitted result, but nobody challenged it before the window closed, so the round paid out from the operator's result.",
+  overturned:
+    "✓ Resolved: the submitted result did not match this page's replay, and the committee overturned it. The payout uses the correct result.",
+  upheld: "✓ Resolved: the committee upheld the submitted result, which matches this page's replay.",
 }
 
 function sui(mist: bigint): string {
@@ -92,6 +101,8 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
   const busy = !IDLE.includes(stage)
   // Chain results stay hidden while the board is playing (stage 'playing').
   const check = stage === 'playing' ? null : replayCheck(state)
+  // Once the round is final, the check says what paid out (no lingering ✗ after an overturn).
+  const shownCheck = settledCheck(check, stage === 'final', state.resolution)
   const bondMist = BigInt(deployment.house.challengerBondMist)
   const windowOpen = state.deadlineMs !== null && Date.now() < state.deadlineMs
   // Anyone may challenge while the window is open; the check only tells the player how risky it is.
@@ -110,8 +121,15 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
       <p className="status" aria-live="polite">
         {state.error ?? STAGE_TEXT[stage]}
       </p>
-      {check && <p className={`check ${check}`}>{CHECK_TEXT[check]}</p>}
+      {shownCheck && <p className={`check ${shownCheck}`}>{CHECK_TEXT[shownCheck]}</p>}
       {check === 'unavailable' && <button onClick={replayAgain}>Replay this round to check it</button>}
+      {shownCheck && state.seedHex && state.roundId !== null && (
+        <ReplayCommand
+          intro="Don't want to trust this page? Check it yourself:"
+          seedHex={state.seedHex}
+          roundId={state.roundId}
+        />
+      )}
       {showChallenge && (
         <button
           className={check === 'mismatch' ? 'challenge' : 'challenge secondary'}
@@ -125,8 +143,15 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
               : 'Challenge window closed'}
         </button>
       )}
+      {showChallenge && check === 'mismatch' && windowOpen && state.deadlineMs !== null && (
+        <p className="hint">
+          Challenge before {clockTime(state.deadlineMs)} and a committee of verifiers re-runs the round. If they agree
+          with you, the result is corrected and you win the operator's bond. If nobody challenges, the round pays out
+          from this result.
+        </p>
+      )}
       {showChallenge && check === 'match' && windowOpen && (
-        <p className="hint">Anyone can challenge, but the result matches your replay: a challenge would lose the bond.</p>
+        <p className="hint">Anyone can challenge, but the result matches this page's replay: a challenge would lose the bond.</p>
       )}
       {stage === 'waitingResult' && state.submitDeadlineMs > 0 && !refundable && (
         <p className="hint">If no result arrives by {clockTime(state.submitDeadlineMs)}, you can take your bet back.</p>
@@ -138,20 +163,26 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
             : `The operator missed its deadline: refund my bet (${sui(BET_MIST)})`}
         </button>
       )}
-      {stage === 'challenged' && state.dispute && (
-        <div className="committee">
+      {(stage === 'challenged' || stage === 'final') && state.dispute && (
+        <div className="committee" role="group" aria-label="Committee votes">
+          <p className="committee-title">Committee votes</p>
           {state.dispute.committee.length === 0 ? (
             <p className="hint">Drawing 3 verifiers at random…</p>
           ) : (
             <ul>
               {committeeVotes(state.dispute, state.replayHash).map(({ verifier, vote }) => (
                 <li key={verifier} className={vote}>
-                  <span className="mono">{shortAddress(verifier)}</span> {VOTE_TEXT[vote]}
+                  <span className="mono">{shortAddress(verifier)}</span>{' '}
+                  {vote === 'waiting' && stage === 'final' ? 'did not vote' : VOTE_TEXT[vote]}
                 </li>
               ))}
             </ul>
           )}
-          <p className="hint">2 matching votes decide. Voting ends {clockTime(state.dispute.deadlineMs)}.</p>
+          <p className="hint">
+            {stage === 'final'
+              ? 'Voting closed: these votes decided the round (verdict below).'
+              : `2 matching votes decide. Voting ends ${clockTime(state.dispute.deadlineMs)}.`}
+          </p>
         </div>
       )}
       {state.actionError && <p className="error">{state.actionError}</p>}

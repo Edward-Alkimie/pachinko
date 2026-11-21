@@ -43,28 +43,46 @@ function setUp(view: RoundView | null) {
 }
 
 describe('useVerifyRound', () => {
-  it('replays the round seed in the browser and returns it with the history', async () => {
+  it('reads the round without replaying it, then checks it with the board replay', async () => {
     setUp(round(GOLDEN_SEED))
-    const { result } = renderHook(() => useVerifyRound(DEPLOYMENT, CLIENT))
+    const playOnBoard = vi.fn(async () => GOLDEN_HASH)
+    const { result } = renderHook(() => useVerifyRound(DEPLOYMENT, CLIENT, playOnBoard))
     await act(() => result.current.verify(1n))
-
     expect(result.current.state).toMatchObject({
       status: 'done',
       roundId: 1n,
-      result: { betMist: 10_000_000n, replayHash: GOLDEN_HASH, history: HISTORY },
+      replay: 'none',
+      result: { betMist: 10_000_000n, canReplay: true, replayHash: null, history: HISTORY },
     })
-  }, 30_000)
+    expect(playOnBoard).not.toHaveBeenCalled()
+
+    await act(() => result.current.replayOnBoard())
+    expect(playOnBoard).toHaveBeenCalledWith('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f', 1n)
+    expect(result.current.state).toMatchObject({ status: 'done', replay: 'done', result: { replayHash: GOLDEN_HASH } })
+    expect(result.current.ownReplayPlaying).toBe(false)
+  })
+
+  it('marks a replay cut short as interrupted, with no hash', async () => {
+    setUp(round(GOLDEN_SEED))
+    const { result } = renderHook(() => useVerifyRound(DEPLOYMENT, CLIENT, async () => null))
+    await act(() => result.current.verify(1n))
+    await act(() => result.current.replayOnBoard())
+    expect(result.current.state).toMatchObject({ status: 'done', replay: 'interrupted', result: { replayHash: null } })
+  })
 
   it('does not replay a round of another physics version', async () => {
     setUp(round(GOLDEN_SEED, 'pachinko-v9'))
-    const { result } = renderHook(() => useVerifyRound(DEPLOYMENT, CLIENT))
+    const playOnBoard = vi.fn(async () => GOLDEN_HASH)
+    const { result } = renderHook(() => useVerifyRound(DEPLOYMENT, CLIENT, playOnBoard))
     await act(() => result.current.verify(1n))
-    expect(result.current.state).toMatchObject({ status: 'done', result: { replayHash: null } })
+    await act(() => result.current.replayOnBoard())
+    expect(playOnBoard).not.toHaveBeenCalled()
+    expect(result.current.state).toMatchObject({ status: 'done', result: { canReplay: false, replayHash: null } })
   })
 
   it('reports a round number that does not exist', async () => {
     setUp(null)
-    const { result } = renderHook(() => useVerifyRound(DEPLOYMENT, CLIENT))
+    const { result } = renderHook(() => useVerifyRound(DEPLOYMENT, CLIENT, async () => null))
     await act(() => result.current.verify(99n))
     expect(result.current.state).toEqual({ status: 'error', roundId: 99n, error: 'No round #99 on this deployment.' })
   })

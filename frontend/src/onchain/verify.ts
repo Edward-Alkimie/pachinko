@@ -9,11 +9,12 @@ import { toHex } from '@mysten/sui/utils'
  * verified       paid from the result your replay gives, never challenged
  * caught         a forged result was challenged and overturned; paid from your replay's result
  * upheld         a challenge failed: the operator was honest; paid from your replay's result
- * paidMismatch   the result the player was paid from is NOT what your replay gives
+ * unchallenged   the operator's result is NOT what your replay gives, nobody challenged it in time, and it paid out
+ * paidMismatch   the result the player was paid from is NOT what your replay gives, even after a challenge
  * refunded       no result arrived in time; the bet went back
  * inProgress     not settled yet
  */
-export type Verdict = 'verified' | 'caught' | 'upheld' | 'paidMismatch' | 'refunded' | 'inProgress'
+export type Verdict = 'verified' | 'caught' | 'upheld' | 'unchallenged' | 'paidMismatch' | 'refunded' | 'inProgress'
 
 /** The hash the player was paid from (the corrected one after a successful challenge), or null. */
 export function paidHash(history: RoundHistory): string | null {
@@ -25,7 +26,7 @@ export function verdictOf(status: RoundStatus, history: RoundHistory, replayHash
   if (status === RoundStatus.Refunded) return 'refunded'
   const paid = paidHash(history)
   if (status !== RoundStatus.Finalized || paid === null) return 'inProgress'
-  if (paid !== replayHash) return 'paidMismatch'
+  if (paid !== replayHash) return history.challenged ? 'paidMismatch' : 'unchallenged'
   if (!history.resolved) return 'verified'
   return history.resolved.operator_honest ? 'upheld' : 'caught'
 }

@@ -56,9 +56,9 @@ function App() {
   const { result, tick, status } = state
   const isBusy = status === 'simulating'
   const playSeed = useCallback((seedHex: string, roundId: bigint) => void start(seedHex, roundId), [start])
-  // On-chain rounds also need the replay's hash, to compare with the submitted result. It arrives
+  // On-chain and Verify rounds also need the replay's hash, to compare with the chain. It arrives
   // when playback ends, so the match / mismatch never shows before the balls have landed.
-  const playOnchainSeed = useCallback(
+  const playReplay = useCallback(
     async (seedHex: string, roundId: bigint) => (await start(seedHex, roundId))?.resultHash ?? null,
     [start],
   )
@@ -92,7 +92,7 @@ function App() {
         <aside className="side">
           <div className="side" hidden={route.view !== 'play'}>
             <AuthPanel state={authState} {...authActions} />
-            <OnchainPanel onSeed={playOnchainSeed} />
+            <OnchainPanel onSeed={playReplay} />
           </div>
           {route.view === 'verify' &&
             (verify ? (
@@ -101,7 +101,7 @@ function App() {
                 client={verify.client}
                 initialRound={route.round}
                 onRoundChange={(round) => showRoute({ view: 'verify', round })}
-                onWatch={playSeed}
+                playOnBoard={playReplay}
                 boardBusy={status === 'simulating' || status === 'playing'}
               />
             ) : (
