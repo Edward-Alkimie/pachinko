@@ -4,7 +4,8 @@
  * `onSeed` plays it with the normal board animation. Nothing from the chain is shown while the balls
  * are still falling (`stageOf`). After that the panel compares the submitted result with the page's
  * own replay (worded as "this page's replay", with the `npm run replay` command for a check that does
- * not trust the page), and the player may challenge while the window is open (anyone may; on a match the
+ * not trust the page). Both hashes are shown (`ResultHashes`): the operator's as soon as it is on-chain,
+ * the replay's once the balls land, and the player may challenge while the window is open (anyone may; on a match the
  * warning says the bond would be lost). A challenged round shows its committee and their votes, and keeps them on screen once the round
  * is final (with the deciding vote); the verdict and the wallet's net show once the round is final. If the operator misses the round's submit
  * deadline, the player can take the bet back. Off unless a deployment is configured.
@@ -27,6 +28,7 @@ import { ONCHAIN } from '../onchain/deployment'
 import { settlement } from '../onchain/settlement'
 import { getDAppKit } from '../onchain/dappKit'
 import { ReplayCommand } from './CopyValue'
+import { ResultHashes } from './ResultHashes'
 import { WalletPanel } from './WalletPanel'
 import './OnchainPanel.css'
 
@@ -122,6 +124,9 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
         {state.error ?? STAGE_TEXT[stage]}
       </p>
       {shownCheck && <p className={`check ${shownCheck}`}>{CHECK_TEXT[shownCheck]}</p>}
+      {state.submittedHash && (
+        <ResultHashes submittedHash={state.submittedHash} replay={state.replay} replayHash={state.replayHash} />
+      )}
       {check === 'unavailable' && <button onClick={replayAgain}>Replay this round to check it</button>}
       {shownCheck && state.seedHex && state.roundId !== null && (
         <ReplayCommand

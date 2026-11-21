@@ -31,3 +31,9 @@
 .onchain-panel .committee li.waiting { color: #8a94a6; }
 .onchain-panel .committee li.agrees { color: #98c379; }
 .onchain-panel .committee li.disagrees { color: #e06c75; }
+.onchain-panel .result-hashes { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; font-size: 0.85rem; }
+.onchain-panel .result-hashes dt { color: #8a94a6; }
+.onchain-panel .result-hashes dd { margin: 0; }
+.onchain-panel .result-hashes .match { color: #98c379; }
+.onchain-panel .result-hashes .mismatch { color: #e06c75; }
+.onchain-panel .result-hashes .pending { color: #8a94a6; font-style: italic; }

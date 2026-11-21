@@ -191,7 +191,8 @@ Then the panel compares the replay hash with the submitted one (`replayCheck`) a
 window is open. Once the round is final, `settledCheck` turns that check into what paid out
 (overturned / upheld after a challenge; unchallenged / paid without one), so a resolved mismatch no longer shows as an open ✗.
 The panel words it as "this page's replay" and shows the `npm run replay` command (`ReplayCommand`) for a check that
-doesn't trust the page. The wallet signs the bet and, if the player chooses, the challenge.
+doesn't trust the page. `ResultHashes` prints both hashes: the operator's as soon as it is submitted (a hash reveals
+nothing while the balls fall), the replay's when they land. The wallet signs the bet and, if the player chooses, the challenge.
 
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
 picks up where it stopped. Challenged rounds are left to the committee (and the arbiter fallback).
@@ -256,6 +257,7 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `useAuth` | hooks/useAuth.ts | sign-in state: loading → anonymous / authenticated; login, register, logout, clearError | ✅ |
 | `AuthPanel` | components/AuthPanel.tsx | login/register form (two modes) or "Signed in as …" + Log out | ✅ |
 | `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status by `stageOf`, replay check, **Challenge** (window open), the committee and its votes while challenged, **refund my bet** after a missed submit deadline, round / bet / challenge / refund links, verdict (committee or admin fallback), wallet net table; off with a reason when no deployment is set | ✅ |
+| `ResultHashes` | components/ResultHashes.tsx | OnchainPanel: Operator submitted hash (as soon as it is on-chain) next to This page's replay hash (once the balls land), submitted marked ✓/✗ | ✅ |
 | `CopyValue` / `ReplayCommand` | components/CopyValue.tsx | long value shown shortened (full on hover) + Copy of the full value; the copyable `npm run replay -- <seed> <round>` line (Verify page, OnchainPanel) | ✅ |
 | `WalletPanel` | components/WalletPanel.tsx | "Connect <wallet>" per Sui wallet (dApp Kit `useWallets`), or address (explorer link) + Copy + Disconnect | ✅ |
 | `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried; keeps `submitDeadlineMs`) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `fetchDispute` while challenged → `findFinalized` + `findResolved` (payout, verdict), and `findCommitteeVotes` if it was challenged (the settled votes stay shown); `challenge()` / `refund()` sign `challengeTx` / `refundUnsubmittedTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / refunded / error | ✅ |
