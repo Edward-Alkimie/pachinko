@@ -156,7 +156,7 @@ deterministic, every dispute has one correct answer.
 | 1 | Real multipliers / RTP per pocket (Phase 4 odds) | admin-set `multipliers_bps`; pool funding agreed (§6) |
 | 2 | Payout cap, and checking that the house can cover a bet when it is placed | none: `finalize` aborts (`EHouseInsolvent`) until the house is funded |
 | 3 | `withdraw_house` can take funds that pending rounds need | admin is trusted for now |
-| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | operator: refund after the round's submit window (§11.4, built in Move). Arbiter never resolving after a failed committee: still waits |
+| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | operator: refund after the round's submit window (§11.4, built; the player pays its gas, and the bonded `take_round` fix is designed but not built). Arbiter never resolving after a failed committee: still waits |
 | 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | built in Move (§11); verifier node, page and testnet run next |
 | 8 | Who detects wrong results (§1, step 1): player, plus an optional watchdog | the player: the page and `bet:testnet` compare hashes and challenge; no watchdog yet |
 | 6 | Bond sizes and challenge window length | admin sets them per `House` |
@@ -390,9 +390,16 @@ New events: `CommitteeSelected { round, committee, deadline_ms }`, `Voted { roun
   read the window from a `House` passed to the refund, but a round is not tied to a House until a result is
   submitted: a player could pass their own House with a 1 ms window, see the public seed, simulate it, and
   refund only losing rounds. Copying the window at bet time closes that.
-- **Limit (for the report):** a colluding operator could still stall on purpose on a colluding player's losing
-  rounds. Today operator and House are the same party, so it has no reason to; a split operator would need a
-  penalty for missing the window.
+- **Limits (for the report):**
+  - **The player pays the refund's gas** (about 0.002 SUI), although the operator is the one that failed.
+  - **A colluding operator could stall on purpose** on a colluding player's losing rounds. Today operator and
+    House are the same party, so it has no reason to.
+- **Designed fix, not built (time):** the operator *takes* the round with a bond. `take_round(&OperatorCap, round,
+  house, bond, Random, Clock)` replaces the open `draw_seed`, draws the seed, ties the round to that House and
+  locks the operator bond (which then also covers forgery, so `submit_result` takes none). On a missed submit
+  deadline anyone may refund: the bet goes back to the player with most of the bond, and the caller gets a small
+  tip from it, so sending the refund pays for itself and a stalling operator always loses money. A short
+  timeout before the seed lets the player reclaim a round no operator took (nothing is bonded yet then).
 
 ### 11.5 Off-chain pieces (built)
 
