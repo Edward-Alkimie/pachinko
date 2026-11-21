@@ -132,9 +132,10 @@ round's `config_version`:
 
 Step 1 is needed: with no replay there is no challenge, and a forged result finalizes after the
 window. The player decides how to replay: the page (it already replays every round to draw it),
-`npm run replay`, or their own code. The page will compare hashes and offer a **Challenge** button
-within the window (planned). A watchdog process (own key, e.g.
-`CHALLENGER_PRIVATE_KEY`) does the same check when no player is watching. Because the simulation is
+`npm run replay`, or their own code. The page compares hashes once its replay has played to the end
+and shows a **Challenge** button while the window is open (anyone may challenge; on a match it warns
+that the bond would be lost). `npm run bet:testnet` does the same check in the terminal. A watchdog
+process (its own key, not built yet) would do it when no player is watching. Because the simulation is
 deterministic, every dispute has one correct answer.
 
 ## 7. Open decisions
@@ -146,7 +147,7 @@ deterministic, every dispute has one correct answer.
 | 3 | `withdraw_house` can take funds that pending rounds need | admin is trusted for now |
 | 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | none: the round waits |
 | 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | `settle_dispute` is the single entry point it will reuse |
-| 8 | Who detects wrong results (§1, step 1): player, plus an optional watchdog | none yet: only `npm run forged:testnet` challenges |
+| 8 | Who detects wrong results (§1, step 1): player, plus an optional watchdog | the player: the page and `bet:testnet` compare hashes and challenge; no watchdog yet |
 | 6 | Bond sizes and challenge window length | admin sets them per `House` |
 | 7 | Upgrade policy for the package (`UpgradeCap`) | kept by the publisher |
 
@@ -155,20 +156,19 @@ deterministic, every dispute has one correct answer.
 Setup and running a round: root `README.md`. Build, test, keys and troubleshooting:
 `contracts/pachinko/README.md`.
 
-## 9. End-to-end script (`scripts/`)
+## 9. Scripts and testnet runs (`scripts/`)
 
 | File | Does |
 |---|---|
 | `src/deploy.ts` | `npm run deploy:testnet`: `deploy`, then saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
 | `src/bet.ts` | `npm run bet:testnet`: player side only: `createRound`, then follow the round's status until FINALIZED. At SUBMITTED it replays the seed and compares hashes (§1 step 1); on a mismatch it challenges. Prints the verdict (if challenged) and the payout. Needs `npm run operator` running |
-| `src/onchainRound.ts` | `npm run round:testnet`: honest round on the saved deployment. `seededRound` → `submitResult` → wait until `deadline_ms` + 3 s → `finalize` |
-| `src/forgedRound.ts` | `npm run forged:testnet`: `seededRound` → operator submits a forged jackpot (every ball in the best pocket, with the matching hash) → `challenge` (optional second key) → `resolveByAdmin` with the true outcomes |
-| `src/steps.ts` | one function per on-chain step (signs a `@pachinko/chain` transaction): `deploy` (publish → create house → fund house) · `createRound` · `drawSeed` · `seededRound` (those three + `runRound`) · `submitResult` · `challenge` · `resolveByAdmin` · `finalize` · `waitForDeadline` |
+| `src/steps.ts` | the steps the scripts sign (`@pachinko/chain` transactions): `deploy` (publish → create house → fund house) · `createRound` · `challenge`. The operator's steps (seed, submit, finalize) and the arbiter's live in `physics-service/src/operator/` |
 | `src/sui.ts` | `SuiGrpcClient` (testnet JSON-RPC is off), `execute` (sign, print digest + Suiscan link, fail on abort, wait for indexing), created-object and BCS-event readers, `buildPackage` (`sui move build --dump-bytecode-as-base64`) |
 | `src/env.ts` | settings from the repo-root `.env`; only `SUI_PRIVATE_KEY` is required |
 
-The script checks that the round's `config_version` equals the local physics version before it
-plays. It reads the seed and the deadline from the `SeedDrawn` and `ResultSubmitted` events.
+`createRound` checks that the round's `config_version` equals the local physics version before the
+player follows it. The two runs below from 2026-11-17 were made with the former one-process scripts
+`round:testnet` and `forged:testnet` (removed 2026-11-21; the operator, the page and `bet:testnet` cover both).
 
 Deployments: each teammate has their own (`PACHINKO_DEPLOYMENT` in `.env` picks
 `chain/src/deployments/<name>.json`), so tests on one machine never touch another person's rounds.
@@ -243,7 +243,7 @@ show payout ◀──────────────────── Fina
 | # | What | Files | Owner area |
 |---|---|---|---|
 | 1 ✅ | **Shared chain package** `chain/` (`@pachinko/chain`): BCS event layouts, transaction builders that return an unsigned `Transaction` (`createRound`, `drawSeed`, `submitResult`, `finalize`, …), `-1 ↔ 0xFFFF`, gRPC client factory. `scripts/` switches to it. | new `chain/`; `scripts/src/*`; root `package.json` (workspace) | shared |
-| 2 ✅ | **Deploy once:** `npm run deploy:testnet` publishes + creates and funds the House, then writes the ids to `chain/src/deployments/<name>.json` (one per teammate, chosen with `PACHINKO_DEPLOYMENT`; public ids, committed). Scripts, operator and frontend all read it. `round:testnet` reuses it instead of publishing. | `scripts/`, `chain/` | shared |
+| 2 ✅ | **Deploy once:** `npm run deploy:testnet` publishes + creates and funds the House, then writes the ids to `chain/src/deployments/<name>.json` (one per teammate, chosen with `PACHINKO_DEPLOYMENT`; public ids, committed). Scripts, operator and frontend all read it. Scripts reuse it instead of publishing. | `scripts/`, `chain/` | shared |
 | 3 ✅ | **Operator loop:** polls `RoundCreated` events for the deployed package; for each round reads its status and does the next step: draw seed → `runRound` → submit → wait for the deadline → finalize. It skips challenged rounds (the arbiter resolves those). Reading the status first makes it safe to restart. Operator key: `OPERATOR_PRIVATE_KEY` in `.env`. | **new files only:** `physics-service/src/operator/*.ts`; `physics-service/package.json` (`npm run operator`, deps) | Kevin's package |
 | 4 ✅ | **Frontend on-chain play:** wallet connect (`@mysten/dapp-kit-react` + `dapp-kit-core` hooks with a small `WalletPanel`; the kit's prebuilt connect button didn't receive its instance under React 19, so it isn't used), the player signs `create_round`, the page polls the Round until the seed appears, then plays it with the existing `useRound.start(seed, round_id)`, then shows status and payout until `Finalized`. Local Start / Replay stay as they are. | **new:** `hooks/useOnchainRound.ts`, `components/WalletPanel.tsx`, `components/OnchainPanel.tsx` (+ `.css`), `onchain/deployment.ts`, `onchain/dappKit.ts`; **edited:** `App.tsx` (one panel), `vite.config.ts` (`envDir: '..'`), `frontend/package.json`. `main.tsx` is unchanged: no provider needed | Kevin's game frontend + shared wallet |
 | 5 | **Docs:** `SPEC.md` §7.3 (chain package + deployment file), `ARCHITECTURE.md` flow, this file, READMEs | docs | shared |
@@ -278,3 +278,24 @@ as the player. Round 10: bet (`9DR2e4ZA…`), seed (`C5g1nyBX…`), forged submi
 3 s later (`GgGqT5vr…`). The arbiter re-ran the round and resolved it (`2x33LDw2…`): operator forged, both bonds
 (0.02 SUI) to the challenger, and the player was paid from the true outcomes (0.01 SUI, not the forged 0).
 The same run in honest mode (round 11) matched (`3deef717…`) and finalized after the window (`DvKtGAnk…`).
+
+### Testnet run: browser challenge (2026-11-21)
+
+Deployment `kiana`, `npm run operator` with `OPERATOR_CHEAT=shortchange` (arbiter on), the page played from the
+Slush wallet `0x53d1…f332` (a different address from the operator `0x7584…0663`).
+
+| Round 19 (forged result caught) | Digest |
+|---|---|
+| bet (wallet) | `AAguVFmc8xk75bnMB8GnN4WPwNErN8AZAxzACJKaZP9p` |
+| draw seed (operator) | `Basz5B3hZP5zihnUbfcPeckrnGxMzKf9moHoVhaYYRay` |
+| submit, forged (operator) | `CcYu3Lu7T3Ufq88sNfeKMGUw5sn7Fiuno6cA4oWbjiHc` |
+| challenge (wallet) | `BjP1YKvhcdexkiBvgtRoZcrf2GieuAzDYb9UauPYtfx` |
+| resolve (arbiter) | `3mYmz9sA1Z25PU5f2NVQDAWYG76JDWWqBGqhY29YzaBd` |
+
+- **Check on the page:** submitted hash `308530a7…f43e` did not match the page's replay; the arbiter's true hash
+  was `aad81bd5…9bc6`.
+- **Verdict:** operator forged. Both bonds (0.02 SUI) went to the wallet, and it was paid 0.01 SUI from the true
+  outcomes instead of the forged 0: net +0.01 SUI for the wallet.
+- **Challenging an honest result (round 18):** the wallet challenged (`F927rQiM…n4z5`) although the hashes matched
+  (`11e91546…217f`). The arbiter found the operator honest (`AA2ZKTom…cGkX`): both bonds went to the operator,
+  so the wallet lost its 0.01 SUI bond. Rounds 12, 14 and 15 were further forged results caught the same way.

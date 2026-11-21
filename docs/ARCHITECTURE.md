@@ -151,15 +151,15 @@ Same check offline: `npm run replay -- <seed> [roundId]` prints the outcomes and
 
 ---
 
-## 4b. Flow F: one round on Sui testnet ✅ (script; backend/frontend wiring ⏳)
+## 4b. Flow F: deploy, and the contract calls of one round ✅
 
 ```
-scripts/ (deploy.ts once, then onchainRound.ts)   contracts/pachinko (Move)         events read
-────────────────────────────────────────────   ─────────────────────────         ───────────
+caller (deploy.ts once; then Flow G)          contracts/pachinko (Move)         events read
+────────────────────────────────────          ─────────────────────────         ───────────
 deploy:testnet → chain/src/deployments/<PACHINKO_DEPLOYMENT>.json
   publish (tx.publish)               ──────▶ init: AdminCap, shared Game
   setUpHouse                         ──────▶ issue_operator_cap, create_house; fund_house
-round:testnet (reads that file)
+a round (player + operator, Flow G)
 createRound(bet coin)                ──────▶ round::create_round      → BET_LOCKED    RoundCreated (round_id, config_version)
 drawSeed (separate tx)               ──────▶ round::draw_seed(Random) → SEEDED        SeedDrawn (seed)
 runRound(seed, round_id)  (physics/, off-chain)
@@ -169,7 +169,7 @@ wait until deadline_ms
 finalize                             ──────▶ verification::finalize → pay_out → FINALIZED   Finalized (payout)
 ```
 
-Dispute path (Move tests + `npm run forged:testnet`): `challenge` before `deadline_ms` → CHALLENGED →
+Dispute path (Move tests; live in Flow G with `OPERATOR_CHEAT`): `challenge` before `deadline_ms` → CHALLENGED →
 `resolve_by_admin(correct outcomes)` → loser's bond to winner → FINALIZED. Details: `docs/CONTRACTS.md`.
 
 ## 4c. Flow G: connected round ✅ (browser wallet → operator → payout)
@@ -179,12 +179,16 @@ player (OnchainPanel or bet:testnet)            Sui testnet                     
 createRoundTx → sign ──────────────────────▶ create_round → BET_LOCKED ─────▶ tick: listEvents(RoundCreated) → new round
                                                                                nextAction(fetchRound) = drawSeed → drawSeedTx
 fetchRound every 2 s: status / seed  ◀─────── SEEDED ◀─────────────────────────  nextAction = submit → runRound(seed) → submitResultTx
-                                              SUBMITTED (window) ◀──────────── nextAction = wait until deadline + 3 s
-findFinalized → payout  ◀──────────────────── FINALIZED ◀───────────────────── nextAction = finalize → finalizeTx
+replay hash vs fetchSubmission hash           SUBMITTED (window) ◀──────────── nextAction = wait until deadline + 3 s
+  └─ challengeTx (player decides) ─────────▶ CHALLENGED ─────────────────────▶ arbiter: runRound → resolveByAdminTx
+findFinalized + findResolved → net  ◀──────── FINALIZED ◀───────────────────── nextAction = finalize → finalizeTx
 ```
 
 In the browser, `useOnchainRound` passes the seed to the normal `useRound.start(seed, round_id)`, so an on-chain
-round plays on the same board as a local one. The wallet signs only the bet.
+round plays on the same board as a local one. `start` resolves with the result only once playback ends, and
+`stageOf` holds every chain result back until then, so the panel never shows the outcome before the balls land.
+Then the panel compares the replay hash with the submitted one (`replayCheck`) and shows **Challenge** while the
+window is open. The wallet signs the bet and, if the player chooses, the challenge.
 
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
 picks up where it stopped. Challenged rounds are left to the arbiter.
@@ -233,7 +237,7 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `drawBoard` / `boardPixelSize` | game/drawBoard.ts | paints the static board | ✅ |
 | `drawBalls` | game/drawBoard.ts | paints the balls of one frame on top | ✅ |
 | `tickAt` / `frameIndexAt` / `tallyAt` | game/playback.ts | real time → tick → frame to show; pocket counts so far | ✅ |
-| `useRound` | hooks/useRound.ts | start(seed, roundId): runRound, then rAF playback; status idle → simulating → playing → done / error | ✅ |
+| `useRound` | hooks/useRound.ts | start(seed, roundId): runRound, then rAF playback; status idle → simulating → playing → done / error; resolves with the `RoundResult` when playback ends (null if cut short) | ✅ |
 | `ResultPanel` | components/ResultPanel.tsx | status, landed count, tally bars, round, seed, hash | ✅ |
 | `SeedInput` | components/SeedInput.tsx | replay form; validates with `checkSeed` / `checkRoundId` (lib/validation.ts) | ✅ |
 | `BOARD_COLORS` | game/theme.ts | colours | ✅ |
@@ -242,9 +246,11 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `readCookie` / `ApiError` | services/auth.ts | cookie lookup; failed request (status 0 = unreachable) | ✅ |
 | `useAuth` | hooks/useAuth.ts | sign-in state: loading → anonymous / authenticated; login, register, logout, clearError | ✅ |
 | `AuthPanel` | components/AuthPanel.tsx | login/register form (two modes) or "Signed in as …" + Log out | ✅ |
-| `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status, round + bet links, window end, payout; off with a reason when no deployment is set | ✅ |
+| `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status by `stageOf`, replay check, **Challenge** (window open), round / bet / challenge links, verdict, wallet net table; off with a reason when no deployment is set | ✅ |
 | `WalletPanel` | components/WalletPanel.tsx | "Connect <wallet>" per Sui wallet (dApp Kit `useWallets`), or address (explorer link) + Copy + Disconnect | ✅ |
-| `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` → `onSeed` once the seed is on-chain → `fetchSubmission` (deadline) → `findFinalized` (payout); phases idle → signing → waitingSeed → verifying → final / challenged / error | ✅ |
+| `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `findFinalized` + `findResolved` (payout, verdict); `challenge()` signs `challengeTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / error | ✅ |
+| `stageOf` / `replayCheck` | hooks/useOnchainRound.ts | (pure) what the panel shows: `playing` while the board animates, else the chain phase; replay hash vs submitted → match / mismatch / unavailable | ✅ |
+| `settlement` | onchain/settlement.ts | (pure) final round → the wallet's lines (bet, challenge bond, payout, bonds won) and net | ✅ |
 | `ONCHAIN` / `selectDeployment` | onchain/deployment.ts | `VITE_PACHINKO_DEPLOYMENT` → that `chain/src/deployments/*.json` (Vite glob), or off + reason | ✅ |
 | `getDAppKit` | onchain/dappKit.ts | dApp Kit instance for testnet (gRPC client, Slush web wallet), created on first use | ✅ |
 
@@ -306,7 +312,7 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 |---|---|---|---|---|
 | `parseDeployment` | deployment.ts | JSON → checked `Deployment` (ids + House settings) | everything | ✅ |
 | `deploymentName` / `loadDeployment` / `saveDeployment` / `deploymentNames` | node.ts (`@pachinko/chain/node`) | `PACHINKO_DEPLOYMENT` → `deployments/<name>.json` (one per teammate) | scripts, operator | ✅ |
-| `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, (next) frontend | ✅ |
+| `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, frontend | ✅ |
 | `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` (BCS) | operator, (next) frontend | ✅ |
 | event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, operator | ✅ |
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
@@ -319,9 +325,7 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 |---|---|---|---|
 | `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy`, saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` | ✅ |
 | `main` / `checkResult` | src/bet.ts | `npm run bet:testnet`: player side only (create round, follow status); at SUBMITTED replays the seed, compares hashes, challenges on a mismatch; prints verdict + payout; needs a running operator | ✅ |
-| `main` | src/onchainRound.ts | `npm run round:testnet`: honest round (Flow F) on the saved deployment, prints every digest | ✅ |
-| `main` / `forgedJackpot` | src/forgedRound.ts | `npm run forged:testnet`: operator forges a jackpot (matching hash) → `challenge` → `resolveByAdmin` with true outcomes | ✅ |
-| `deploy` / `createRound` / `drawSeed` / `seededRound` / `submitResult` / `challenge` / `resolveByAdmin` / `finalize` / `waitForDeadline` | src/steps.ts | one function per on-chain step: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |
+| `deploy` / `createRound` / `challenge` | src/steps.ts | the steps the scripts sign: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |
 | `connect` / `execute` | src/sui.ts | gRPC client + signer; sign, print digest, fail on abort, wait for indexing | ✅ |
 | `buildPackage` / `publishedPackageId` / `createdObjectId` / `readEvent` | src/sui.ts | compiled modules for publish; ids of created objects; decode BCS events | ✅ |
 | `loadEnv` | src/env.ts | settings from `.env` (`SUI_PRIVATE_KEY` required) | ✅ |
