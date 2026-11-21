@@ -86,6 +86,27 @@ set -a && . ../.env && set +a      # load .env
 
 The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 
+## Test notes: running the demo
+
+Needs Setup §3 done (deployment + `VITE_PACHINKO_DEPLOYMENT`) and a testnet wallet in the browser.
+Open the page with `npm run dev`.
+
+**Regular round**
+1. `npm run operator`
+2. On the page: **Play on-chain** → sign. The replay should **match** and the round pays out after the challenge window.
+
+**Forged round, no committee** (admin settles it)
+1. Set `OPERATOR_CHEAT=shortchange` in `.env`, then `npm run operator`.
+2. **Play on-chain** → the replay shows a **mismatch** → **Challenge**.
+3. After the vote window (60 s), the operator's admin fallback settles it: verdict "caught", and the challenger wins the bond.
+
+**Forged round, with committee** (verifiers vote)
+1. Once: set `VERIFIER_PRIVATE_KEYS` and run `npm run verifiers:setup`.
+2. Set `OPERATOR_CHEAT=shortchange`, then run `npm run operator` and `npm run verifier` in two terminals.
+3. **Play on-chain** → **Challenge** → 3 verifiers are drawn and vote. The panel shows their votes and the verdict.
+
+Remove `OPERATOR_CHEAT` afterwards. To check any finished round, use **Verify** → round number.
+
 ## Commands
 
 | Command | What it does |
