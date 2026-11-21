@@ -145,8 +145,8 @@ deterministic, every dispute has one correct answer.
 | 1 | Real multipliers / RTP per pocket (Phase 4 odds) | admin-set `multipliers_bps`; pool funding agreed (§6) |
 | 2 | Payout cap, and checking that the house can cover a bet when it is placed | none: `finalize` aborts (`EHouseInsolvent`) until the house is funded |
 | 3 | `withdraw_house` can take funds that pending rounds need | admin is trusted for now |
-| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | none: the round waits |
-| 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | `settle_dispute` is the single entry point it will reuse |
+| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | none: the round waits. Design: §11.4 |
+| 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | `settle_dispute` is the single entry point it will reuse. Design: §11 |
 | 8 | Who detects wrong results (§1, step 1): player, plus an optional watchdog | the player: the page and `bet:testnet` compare hashes and challenge; no watchdog yet |
 | 6 | Bond sizes and challenge window length | admin sets them per `House` |
 | 7 | Upgrade policy for the package (`UpgradeCap`) | kept by the publisher |
@@ -299,3 +299,97 @@ Slush wallet `0x53d1…f332` (a different address from the operator `0x7584…06
 - **Challenging an honest result (round 18):** the wallet challenged (`F927rQiM…n4z5`) although the hashes matched
   (`11e91546…217f`). The arbiter found the operator honest (`AA2ZKTom…cGkX`): both bonds went to the operator,
   so the wallet lost its 0.01 SUI bond. Rounds 12, 14 and 15 were further forged results caught the same way.
+
+## 11. Committee and timeout (design draft, 2026-11-21)
+
+Replaces the single admin arbiter (step 2 of §1, "resolve") with a committee of staked verifiers drawn at
+random after a challenge, and adds a timeout for an operator who never submits. Decided with Kiana:
+**3 drawn, 2 must agree · plain votes · wrong and missed votes are slashed · admin resolves only if the
+committee fails**. Everything below this line is a proposal to review (with Kevin for §11.4).
+
+### 11.1 Flow
+
+```
+SUBMITTED ── challenge(bond) ──▶ CHALLENGED, dispute deadline = now + vote_window_ms
+                                   │
+          select_committee(Random) │  separate tx (anyone; like draw_seed), draws 3 verifiers
+                                   │  from the pool, excluding the operator and the challenger
+                                   ▼
+               vote(outcomes) ×N   each drawn verifier re-runs the round and posts its outcomes;
+                                   │  the contract hashes them
+                 ┌─────────────────┴──────────────────────┐
+     2 votes with the same hash                 deadline passes without 2 agreeing votes
+     (before the deadline)                                │
+                 ▼                                         ▼
+   settle_dispute(those outcomes)              resolve_by_admin (fallback only) → settle_dispute
+   → rewards and slashing (§11.3)              → the drawn verifiers who did not vote are slashed
+                 └───────────────────▶ FINALIZED ◀────────┘
+```
+
+Why the draw is its own transaction: if `challenge` drew the committee in the same call, a challenger
+could abort whenever the draw didn't suit them (test-and-abort, the same reason `draw_seed` is separate).
+
+### 11.2 New state
+
+| Where | What |
+|---|---|
+| `House` (new fields) | `verifier_stake` (exact amount to register), `vote_window_ms`, `submit_window_ms` (§11.4), and the pool: `verifiers: vector<address>` (drawn by index) + `stakes: Table<address, Verifier>` |
+| `Verifier` (in the table) | `stake: Balance<SUI>`, `open_duties: u64` (disputes it is drawn for and has not finished; it cannot leave the pool while > 0) |
+| `Dispute` (dynamic field on the `Round`, key `DisputeKey()`) | `deadline_ms`, `committee: vector<address>` (empty until drawn), `votes: vector<Vote>` with `Vote { voter, result_hash, outcomes }` |
+
+### 11.3 Functions, rewards and slashing
+
+| Function | Who | Does |
+|---|---|---|
+| `register_verifier(house, stake)` | anyone | joins the pool; `stake` must equal `verifier_stake` |
+| `leave_pool(house)` | verifier | returns the stake; aborts while `open_duties > 0` |
+| `challenge(...)` (changed) | anyone | as today, plus creates the `Dispute` with its deadline |
+| `entry select_committee(round, house, r: &Random)` | anyone | CHALLENGED, no committee yet, pool has ≥ 3 eligible: draws 3 distinct verifiers, `open_duties += 1` each |
+| `vote(round, house, outcomes)` | a drawn verifier | before the deadline, once each; checks outcomes like `submit_result`, stores the hash; on the 2nd vote with the same hash, settles |
+| `resolve_by_admin(...)` (changed) | `AdminCap` | only after the deadline and only if the committee has not settled |
+
+Money when the committee settles (defaults; easy to change):
+
+- **Winning side** (operator or challenger): its own bond back + half of the loser's bond.
+- **Majority voters**: the other half of the loser's bond, plus the slashed stake, split equally.
+- **Minority voters** (voted, different hash): lose half their stake and leave the pool (the rest is refunded).
+- **The drawn verifier who had not voted yet** when 2 agreed: no reward, no slash (its vote was not needed).
+- **Committee fails** (no 2 agreeing votes by the deadline): drawn verifiers who did not vote lose half their
+  stake and leave the pool; the admin fallback settles the bonds as today (winner takes both).
+- The player is always paid from the correct outcomes, as today.
+
+New events: `VerifierJoined`, `VerifierLeft`, `CommitteeSelected { round, committee, deadline_ms }`,
+`Voted { round, voter, result_hash }`, `VerifierSlashed { verifier, amount }`. `Resolved` gains
+`by_committee: bool`.
+
+### 11.4 Timeout: the operator never submits (needs Kevin: `round` module)
+
+- **Never seeded:** no timeout needed. `draw_seed` is open to anyone, so the player can draw the seed.
+- **Seeded, never submitted:** after `submit_window_ms` from the seed, the player calls
+  `refund_unsubmitted(round, house, clock)` → bet back, new status `REFUNDED` (5). There is no operator bond
+  to take yet (it is posted at submit), so a stalling operator only loses the round.
+- **`round` changes (Kevin):** `draw_seed` takes the `Clock` and stores `seeded_at_ms`; new status
+  `REFUNDED = 5`; new `public(package) fun mark_refunded(round): Balance<SUI>` (SEEDED → REFUNDED), called by
+  `verification::refund_unsubmitted`.
+  `draw_seed` gaining a `Clock` argument changes its signature (SPEC §7).
+
+### 11.5 Off-chain pieces
+
+- **Verifier node** (`physics-service`, `npm run verifier`, own `VERIFIER_PRIVATE_KEY`): on `Challenged`,
+  calls `select_committee` if nobody has; on `CommitteeSelected` naming its address, runs `runRound` and
+  calls `vote`. Same loop shape as the operator and arbiter.
+- **Arbiter** (in `npm run operator`): becomes the fallback only; it waits for the dispute deadline.
+- **Page:** after a challenge, shows the drawn committee and the votes as they arrive, then the verdict.
+- **Demo:** 3 verifier keys funded from the main address (stake + gas each), e.g. `npm run verifiers:setup`
+  to create, fund and register them.
+
+### 11.6 Cost and limits (for the report)
+
+- **Interface change:** new `House` fields and `create_house` arguments, new functions and events, the new
+  `Round` field and status. Struct changes can't be a package upgrade, so every teammate redeploys
+  (`npm run deploy:testnet`) and the frontend and operator move to the new package.
+- **Pool honesty:** on testnet the whole pool is ours, so random selection protects nothing here. It only
+  helps when the pool is large and independent and the stake is worth more than a bribe.
+- **Copying votes:** with plain votes a lazy verifier can copy an earlier on-chain vote instead of
+  re-running; commit-reveal would stop that (not chosen, for time).
+- **Admin fallback** keeps one trusted party as a last resort when the committee fails.
