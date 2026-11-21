@@ -299,12 +299,16 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | `mark_submitted` / `mark_challenged` / `finalize_unchallenged` / `finalize_disputed` | round | `public(package)` status transitions used by `verification` | Kevin | ✅ |
 | `issue_operator_cap` / `create_house` / `fund_house` / `withdraw_house` | verification | admin setup: operator, payout table, bonds, window, treasury | Kiana | ✅ |
 | `submit_result` | verification | operator posts outcomes + hash (checked with `result_hash`), locks bond, starts window (→ SUBMITTED) | Kiana | ✅ |
-| `challenge` | verification | anyone locks a bond before `deadline_ms` (→ CHALLENGED) | Kiana | ✅ |
+| `challenge` | verification | anyone locks a bond before `deadline_ms` (→ CHALLENGED), opens the `Dispute` | Kiana | ✅ |
+| `join_pool` / `leave_pool` | verification → committee | verifiers stake into / leave the `House` pool | Kiana | ✅ |
+| `select_committee` (entry, `Random`) | verification → `committee::draw` | draws 3 verifiers (not operator, challenger, player), separate tx after the challenge | Kiana | ✅ |
+| `vote` | verification → `committee::record_vote` | drawn verifier posts outcomes; the 2nd matching hash settles via `resolve` | Kiana | ✅ |
 | `finalize` | verification | after the window: `pay_out`, operator bond back (→ FINALIZED) | Kiana | ✅ |
-| `resolve_by_admin` → `settle_dispute` | verification | arbiter posts correct outcomes; hash compare decides; loser's bond to winner; `pay_out` (→ FINALIZED) | Kiana | ✅ |
+| `resolve_by_admin` | verification | fallback after the vote deadline: admin posts correct outcomes → `resolve` | Kiana | ✅ |
+| `resolve` → `committee::settle` | verification, committee | hash compare decides; bonds (committee: winner + half the loser's; fallback: winner takes both); rewards and slashes the drawn verifiers; `pay_out` (→ FINALIZED) | Kiana | ✅ |
 | `pay_out` | verification | placeholder payout rule (one function) | Kiana | ✅ |
 | `result_hash` | verification | SPEC §3 bytes → `sha2_256` (same as `hashRoundResult`) | Kiana | ✅ |
-| `submitted_hash` / `treasury_value` | verification | reads: stored result hash, house balance | Kiana | ✅ |
+| `submitted_hash` / `treasury_value` / `pool` / `dispute` | verification | reads: stored result hash, house balance, verifier pool, open dispute | Kiana | ✅ |
 
 ### `chain/` (`@pachinko/chain`, shared Sui code)
 

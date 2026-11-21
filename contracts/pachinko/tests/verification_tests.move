@@ -1,11 +1,13 @@
 #[test_only]
 module pachinko::verification_tests;
 
+use pachinko::committee;
 use pachinko::round::{Self, AdminCap, Round};
 use pachinko::test_helpers::{Self, admin};
 use pachinko::verification::{Self, House, OperatorCap};
 use std::unit_test::assert_eq;
 use sui::clock::Clock;
+use sui::random::Random;
 use sui::coin::{Self, Coin};
 use sui::sui::SUI;
 use sui::test_scenario::{Self as ts, Scenario};
@@ -19,11 +21,16 @@ const HOUSE_FUNDS: u64 = 1_000_000;
 const OPERATOR_BOND: u64 = 500;
 const CHALLENGER_BOND: u64 = 300;
 const WINDOW_MS: u64 = 60_000;
+const VERIFIER_STAKE: u64 = 1_000;
+const VOTE_WINDOW_MS: u64 = 120_000;
 const BALLS: u64 = 4;
 const NONE: u16 = 0xFFFF;
 
 // Status value from docs/SPEC.md §7.
 const FINALIZED: u8 = 4;
+
+/// Staked verifiers in the pool (the committee draws 3 of them).
+fun verifiers(): vector<address> { vector[@0x51, @0x52, @0x53, @0x54] }
 
 /// Pocket multipliers: 3×, 1×, 0.5×, 0, 0.5×, 1×, 3×.
 fun multipliers(): vector<u64> { vector[30_000, 10_000, 5_000, 0, 5_000, 10_000, 30_000] }
@@ -51,6 +58,8 @@ fun setup(): Scenario {
         OPERATOR_BOND,
         CHALLENGER_BOND,
         WINDOW_MS,
+        VERIFIER_STAKE,
+        VOTE_WINDOW_MS,
         scenario.ctx(),
     );
     scenario.return_to_sender(cap);
@@ -137,15 +146,88 @@ fun finalize(scenario: &mut Scenario) {
     ts::return_shared(round);
 }
 
+/// The admin fallback, once the vote deadline has passed.
 fun resolve(scenario: &mut Scenario, correct_outcomes: vector<u16>) {
+    advance_clock(scenario, VOTE_WINDOW_MS);
+    resolve_now(scenario, correct_outcomes);
+}
+
+fun resolve_now(scenario: &mut Scenario, correct_outcomes: vector<u16>) {
     scenario.next_tx(admin());
     let cap = scenario.take_from_sender<AdminCap>();
     let mut round = scenario.take_shared<Round>();
     let mut house = scenario.take_shared<House>();
-    verification::resolve_by_admin(&cap, &mut round, &mut house, correct_outcomes, scenario.ctx());
+    let clock = scenario.take_shared<Clock>();
+    verification::resolve_by_admin(&cap, &mut round, &mut house, correct_outcomes, &clock, scenario.ctx());
+    ts::return_shared(clock);
     ts::return_shared(house);
     ts::return_shared(round);
     scenario.return_to_sender(cap);
+}
+
+/// `who` joins the verifier pool with `stake` MIST.
+fun join_pool(scenario: &mut Scenario, who: address, stake: u64) {
+    scenario.next_tx(who);
+    let mut house = scenario.take_shared<House>();
+    verification::join_pool(&mut house, coin::mint_for_testing(stake, scenario.ctx()), scenario.ctx());
+    ts::return_shared(house);
+}
+
+fun join_all_verifiers(scenario: &mut Scenario) {
+    verifiers().do!(|v| join_pool(scenario, v, VERIFIER_STAKE));
+}
+
+/// Anyone draws the committee of the challenged round; returns it.
+fun select_committee(scenario: &mut Scenario): vector<address> {
+    scenario.next_tx(PLAYER);
+    let mut round = scenario.take_shared<Round>();
+    let mut house = scenario.take_shared<House>();
+    let random = scenario.take_shared<Random>();
+    let clock = scenario.take_shared<Clock>();
+    verification::select_committee(&mut round, &mut house, &random, &clock, scenario.ctx());
+    let drawn = *verification::dispute(&round).committee();
+    ts::return_shared(clock);
+    ts::return_shared(random);
+    ts::return_shared(house);
+    ts::return_shared(round);
+    drawn
+}
+
+fun vote(scenario: &mut Scenario, voter: address, outcomes: vector<u16>) {
+    scenario.next_tx(voter);
+    let mut round = scenario.take_shared<Round>();
+    let mut house = scenario.take_shared<House>();
+    let clock = scenario.take_shared<Clock>();
+    verification::vote(&mut round, &mut house, outcomes, &clock, scenario.ctx());
+    ts::return_shared(clock);
+    ts::return_shared(house);
+    ts::return_shared(round);
+}
+
+/// Setup + 4 staked verifiers, a forged or honest submission, a challenge, and the drawn committee.
+fun challenged_with_committee(outcomes: vector<u16>): (Scenario, vector<address>) {
+    let mut scenario = setup();
+    join_all_verifiers(&mut scenario);
+    submit(&mut scenario, outcomes);
+    challenge(&mut scenario);
+    let drawn = select_committee(&mut scenario);
+    (scenario, drawn)
+}
+
+fun treasury(scenario: &mut Scenario): u64 {
+    scenario.next_tx(admin());
+    let house = scenario.take_shared<House>();
+    let value = house.treasury_value();
+    ts::return_shared(house);
+    value
+}
+
+fun pool_members(scenario: &mut Scenario): vector<address> {
+    scenario.next_tx(admin());
+    let house = scenario.take_shared<House>();
+    let members = *verification::pool(&house).members();
+    ts::return_shared(house);
+    members
 }
 
 // === Checks ===
@@ -346,7 +428,7 @@ fun finalizing_twice_aborts() {
     scenario.end();
 }
 
-#[test, expected_failure(abort_code = round::ENotChallenged)]
+#[test, expected_failure(abort_code = verification::ENoDispute)]
 fun resolve_without_challenge_aborts() {
     let mut scenario = setup();
     submit(&mut scenario, honest_outcomes());
@@ -369,5 +451,210 @@ fun finalize_aborts_when_house_cannot_pay() {
     submit(&mut scenario, forged_outcomes()); // pays 3 × BET, house only has the bet
     advance_clock(&mut scenario, WINDOW_MS);
     finalize(&mut scenario);
+    scenario.end();
+}
+
+// === Committee: settled by votes ===
+
+#[test]
+fun committee_catches_forged_result() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    assert_eq!(drawn.length(), 3);
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    vote(&mut scenario, drawn[1], honest_outcomes());
+
+    assert_settled_honestly(&mut scenario);
+    // Challenger: own bond + half the operator's. Voters split the other half.
+    assert_received(&mut scenario, CHALLENGER, CHALLENGER_BOND + OPERATOR_BOND / 2);
+    assert_received(&mut scenario, drawn[0], OPERATOR_BOND / 4);
+    assert_received(&mut scenario, drawn[1], OPERATOR_BOND / 4);
+    scenario.end();
+}
+
+#[test]
+fun committee_upholds_honest_result_against_false_challenge() {
+    let (mut scenario, drawn) = challenged_with_committee(honest_outcomes());
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    vote(&mut scenario, drawn[2], honest_outcomes());
+
+    assert_settled_honestly(&mut scenario);
+    assert_received(&mut scenario, OPERATOR, OPERATOR_BOND + CHALLENGER_BOND / 2);
+    assert_received(&mut scenario, drawn[0], CHALLENGER_BOND / 4);
+    assert_received(&mut scenario, drawn[2], CHALLENGER_BOND / 4);
+    scenario.end();
+}
+
+#[test]
+fun minority_voter_is_slashed_and_majority_shares_its_stake() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    vote(&mut scenario, drawn[1], forged_outcomes()); // wrong
+    vote(&mut scenario, drawn[2], honest_outcomes());
+
+    assert_settled_honestly(&mut scenario);
+    // The wrong voter gets half its stake back and leaves the pool.
+    assert_received(&mut scenario, drawn[1], VERIFIER_STAKE / 2);
+    assert!(!pool_members(&mut scenario).contains(&drawn[1]));
+    // Majority: half the operator's bond + the slashed half stake, split two ways.
+    let share = (OPERATOR_BOND / 2 + VERIFIER_STAKE / 2) / 2;
+    assert_received(&mut scenario, drawn[0], share);
+    assert_received(&mut scenario, drawn[2], share);
+    scenario.end();
+}
+
+#[test]
+fun committee_never_includes_operator_challenger_or_player() {
+    let mut scenario = setup();
+    join_all_verifiers(&mut scenario);
+    join_pool(&mut scenario, OPERATOR, VERIFIER_STAKE);
+    join_pool(&mut scenario, CHALLENGER, VERIFIER_STAKE);
+    join_pool(&mut scenario, PLAYER, VERIFIER_STAKE);
+    submit(&mut scenario, forged_outcomes());
+    challenge(&mut scenario);
+
+    let drawn = select_committee(&mut scenario);
+    let pool = verifiers();
+    assert!(drawn.all!(|m| pool.contains(m)));
+    scenario.end();
+}
+
+#[test]
+fun verifiers_leave_with_their_stake_once_settled() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    vote(&mut scenario, drawn[1], honest_outcomes());
+
+    // drawn[2] never voted: freed, not slashed, so it can leave with its full stake.
+    scenario.next_tx(drawn[2]);
+    let mut house = scenario.take_shared<House>();
+    let stake = verification::leave_pool(&mut house, scenario.ctx());
+    assert_eq!(stake.value(), VERIFIER_STAKE);
+    stake.burn_for_testing();
+    ts::return_shared(house);
+    scenario.end();
+}
+
+// === Committee: admin fallback ===
+
+#[test]
+fun admin_fallback_slashes_drawn_verifiers_that_did_not_vote() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    vote(&mut scenario, drawn[0], honest_outcomes()); // one vote: no quorum
+    let before = treasury(&mut scenario);
+    resolve(&mut scenario, honest_outcomes());
+
+    // Bonds as before the committee: the winner takes both.
+    assert_received(&mut scenario, CHALLENGER, CHALLENGER_BOND + OPERATOR_BOND);
+    // Two drawn verifiers never voted: half their stake goes to the treasury, the rest back.
+    assert_received(&mut scenario, drawn[1], VERIFIER_STAKE / 2);
+    assert_received(&mut scenario, drawn[2], VERIFIER_STAKE / 2);
+    assert_eq!(treasury(&mut scenario), before + BET - HONEST_PAYOUT + VERIFIER_STAKE);
+    assert!(pool_members(&mut scenario).contains(&drawn[0]));
+    scenario.end();
+}
+
+#[test]
+fun admin_fallback_works_when_no_committee_could_be_drawn() {
+    let mut scenario = setup(); // empty pool
+    submit(&mut scenario, forged_outcomes());
+    challenge(&mut scenario);
+    resolve(&mut scenario, honest_outcomes());
+
+    assert_settled_honestly(&mut scenario);
+    assert_received(&mut scenario, CHALLENGER, CHALLENGER_BOND + OPERATOR_BOND);
+    scenario.end();
+}
+
+// === Committee: invalid calls ===
+
+#[test, expected_failure(abort_code = committee::EVotingOpen)]
+fun admin_fallback_before_vote_deadline_aborts() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    resolve_now(&mut scenario, honest_outcomes());
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::ENotInCommittee)]
+fun vote_by_verifier_not_drawn_aborts() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    let pool = verifiers();
+    let outsider = pool[pool.find_index!(|v| !drawn.contains(v)).destroy_some()];
+    vote(&mut scenario, outsider, honest_outcomes());
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::EAlreadyVoted)]
+fun voting_twice_aborts() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::EVotingClosed)]
+fun vote_after_deadline_aborts() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    advance_clock(&mut scenario, VOTE_WINDOW_MS);
+    vote(&mut scenario, drawn[0], honest_outcomes());
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = verification::EInvalidOutcome)]
+fun vote_with_invalid_outcomes_aborts() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    vote(&mut scenario, drawn[0], vector[0, 1, 2, 7]);
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::ECommitteeAlreadyDrawn)]
+fun drawing_the_committee_twice_aborts() {
+    let (mut scenario, _) = challenged_with_committee(forged_outcomes());
+    select_committee(&mut scenario);
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::ENotEnoughVerifiers)]
+fun drawing_from_a_too_small_pool_aborts() {
+    let mut scenario = setup();
+    join_pool(&mut scenario, verifiers()[0], VERIFIER_STAKE);
+    join_pool(&mut scenario, verifiers()[1], VERIFIER_STAKE);
+    submit(&mut scenario, forged_outcomes());
+    challenge(&mut scenario);
+    select_committee(&mut scenario);
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = verification::ENoDispute)]
+fun drawing_a_committee_without_challenge_aborts() {
+    let mut scenario = setup();
+    join_all_verifiers(&mut scenario);
+    submit(&mut scenario, forged_outcomes());
+    select_committee(&mut scenario);
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::EOpenDuties)]
+fun leaving_the_pool_while_drawn_aborts() {
+    let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
+    scenario.next_tx(drawn[0]);
+    let mut house = scenario.take_shared<House>();
+    verification::leave_pool(&mut house, scenario.ctx()).burn_for_testing();
+    ts::return_shared(house);
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::EWrongStake)]
+fun joining_with_the_wrong_stake_aborts() {
+    let mut scenario = setup();
+    join_pool(&mut scenario, verifiers()[0], VERIFIER_STAKE - 1);
+    scenario.end();
+}
+
+#[test, expected_failure(abort_code = committee::EAlreadyMember)]
+fun joining_twice_aborts() {
+    let mut scenario = setup();
+    join_pool(&mut scenario, verifiers()[0], VERIFIER_STAKE);
+    join_pool(&mut scenario, verifiers()[0], VERIFIER_STAKE);
     scenario.end();
 }
