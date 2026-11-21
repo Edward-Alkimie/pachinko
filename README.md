@@ -56,7 +56,7 @@ Details and troubleshooting: `contracts/pachinko/README.md`.
 
 ### Play a round on testnet
 
-1. Terminal 1: `npm run operator` (keep it running; it draws seeds, runs physics, submits, finalizes).
+1. Terminal 1: `npm run operator` (keep it running; it draws seeds, runs physics, submits, finalizes, and settles challenges).
 2. Terminal 2: `npm run dev` → open `http://<host>/absproxy/5180/`.
 3. Under **On-chain play**, connect a wallet (e.g. Slush, on testnet, with some test SUI) → **Play on-chain**.
 
@@ -82,7 +82,7 @@ The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 | `npm run dev:physics-service` | Physics service on :8100 (`POST /verify`) |
 | `npm run replay -- <seed> [roundId]` | Re-run one round, print outcomes + hash |
 | `npm run deploy:testnet` | Publish your contracts + House → `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
-| `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes |
+| `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes. Also the arbiter: settles challenged rounds |
 | `npm run operator` with `OPERATOR_CHEAT=shortchange` in `.env` | Demo: the operator forges every result (player paid nothing), so a challenge can catch it |
 | `npm run bet:testnet` | Player side only: bet, then follow the round (needs the operator) |
 | `npm run round:testnet` | One full round from a script, playing both sides |

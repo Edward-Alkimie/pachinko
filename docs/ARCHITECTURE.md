@@ -189,6 +189,11 @@ round plays on the same board as a local one. The wallet signs only the bet.
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
 picks up where it stopped. Challenged rounds are left to the arbiter.
 
+**Arbiter** (same process, when the key also holds the `AdminCap`): `listEvents(Challenged)` → round still
+CHALLENGED → `runRound(seed)` → `resolveByAdminTx(true outcomes)`. The contract compares hashes, gives both
+bonds to the honest side and pays the player from the true outcomes. Operator and arbiter take turns in one
+loop, one transaction at a time, so they never compete for the key's gas coin.
+
 ---
 
 ## 5. Function index
@@ -256,9 +261,12 @@ picks up where it stopped. Challenged rounds are left to the arbiter.
 | replay CLI | src/cli.ts | `npm run replay -- <seed> [roundId]` | ✅ |
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
 | `nextAction` | src/operator/nextAction.ts | on-chain `RoundView` (+ deadline) → `drawSeed` / `submit` / `wait` / `finalize` / `drop` (pure) | ✅ |
+| `arbiterAction` | src/operator/nextAction.ts | on-chain `RoundView` → `resolve` (CHALLENGED, same physics version) / `drop` (pure) | ✅ |
+| `createRoundFeed` → `next` | src/operator/roundFeed.ts | object ids of rounds in new events of one type (oldest-first cursor) | ✅ |
 | `createOperator` → `tick` | src/operator/operator.ts | poll `RoundCreated` events, advance each round one tx at a time, retry failures after 30 s | ✅ |
+| `createArbiter` → `tick` | src/operator/arbiter.ts | poll `Challenged` events, re-run each round, `resolve_by_admin` with the true outcomes, retry failures after 30 s | ✅ |
 | `parseCheat` / `forgeOutcomes` | src/operator/cheat.ts | demo only: `OPERATOR_CHEAT=shortchange` → every ball reported as never landed; the operator submits them with a matching hash | ✅ |
-| operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap`, polls every 2 s (Flow G) | ✅ |
+| operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap` (and runs the arbiter if it also owns the `AdminCap`), polls every 2 s (Flow G) | ✅ |
 
 ### `backend/` (Django)
 

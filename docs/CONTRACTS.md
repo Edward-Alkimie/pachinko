@@ -128,7 +128,7 @@ round's `config_version`:
 | Step | Who | When | Does |
 |---|---|---|---|
 | 1. Detect | anyone: the player, or an optional watchdog | every submitted round, inside the challenge window | replays the public seed and compares its hash with the submitted one; on a mismatch, calls `challenge` with a bond |
-| 2. Resolve | arbiter: `AdminCap` now, a committee of staked verifiers later (§7 #5) | only after a challenge | re-runs the round and settles it (`settle_dispute`); the dishonest side loses its bond |
+| 2. Resolve | arbiter: `AdminCap` now (run by `npm run operator`), a committee of staked verifiers later (§7 #5) | only after a challenge | re-runs the round and settles it (`settle_dispute`); the dishonest side loses its bond |
 
 Step 1 is needed: with no replay there is no challenge, and a forged result finalizes after the
 window. The player decides how to replay: the page (it already replays every round to draw it),
