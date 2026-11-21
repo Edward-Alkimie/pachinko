@@ -30,6 +30,8 @@ export {
   seedToHex,
 } from './seed'
 export type { Launch } from './seed'
+export { CHECKPOINT_EVERY, corpusSeed, runDeterminismCorpus } from './determinism'
+export type { DeterminismReport } from './determinism'
 export { encodeRoundResult, hashRoundResult } from './hash'
 export type { RoundResultInput } from './hash'
 export { OUTCOME_NONE, initPhysics, runRound } from './runRound'

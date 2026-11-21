@@ -90,6 +90,7 @@ The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 | `npm run dev` | Frontend (code-server: `http://<host>/absproxy/5180/`) |
 | `npm run dev:physics-service` | Physics service on :8100 (`POST /verify`) |
 | `npm run replay -- <seed> [roundId]` | Re-run one round, print outcomes + hash |
+| `npm run determinism -- [rounds]` | Determinism corpus (default 1000 rounds): one digest that must match on every platform; in a browser open `determinism.html` |
 | `npm run deploy:testnet` | Publish your contracts + House → `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
 | `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes. Also the fallback arbiter for challenges the committee leaves undecided |
 | `npm run operator` with `OPERATOR_CHEAT=shortchange` in `.env` | Demo: the operator forges every result (player paid nothing), so a challenge can catch it |

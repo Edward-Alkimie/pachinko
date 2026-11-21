@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "replay": "tsx src/cli.ts",
+    "determinism": "tsx src/determinism.ts",
     "operator": "tsx src/operator/main.ts",
     "verifier": "tsx src/verifier/main.ts",
     "test": "vitest run",

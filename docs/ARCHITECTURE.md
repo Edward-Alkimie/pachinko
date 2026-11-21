@@ -232,6 +232,7 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `OUTCOME_NONE` | runRound.ts | constant `-1` (ball never landed) | everyone reading outcomes | ✅ |
 | `encodeRoundResult` | hash.ts | {version, seed, roundId, outcomes} → bytes | hashRoundResult, (later) contract | ✅ |
 | `hashRoundResult` | hash.ts | same → SHA-256 hex | runRound, backend, verifier | ✅ |
+| `corpusSeed` / `runDeterminismCorpus` / `CHECKPOINT_EVERY` | determinism.ts | N fixed seeds → one SHA-256 over all result hashes (+ a checkpoint every 100 rounds); same digest required on every platform | determinism CLI, `determinism.html` | ✅ |
 
 ### `frontend/`
 
@@ -270,6 +271,7 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `parseSeedHex` / `parseRoundId` | src/parse.ts | shared input checks (seed hex, u64 round id) → `Parsed<T>` | ✅ |
 | `parseReplayArgs` / `replayReport` | src/replay.ts | replay CLI: args → report (end tick, hash, pocket tally, outcomes) | ✅ |
 | replay CLI | src/cli.ts | `npm run replay -- <seed> [roundId]` | ✅ |
+| determinism CLI | src/determinism.ts | `npm run determinism -- [rounds]` (default 1000): runs the corpus, prints checkpoints + digest and the Node version / OS | ✅ |
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
 | `nextAction` | src/operator/nextAction.ts | on-chain `RoundView` (+ deadline) → `drawSeed` / `submit` / `wait` / `finalize` / `drop` (pure) | ✅ |
 | `arbiterAction` | src/operator/nextAction.ts | on-chain `RoundView` + vote deadline → `wait` (until deadline + 3 s) / `resolve` (still CHALLENGED, same physics version) / `drop` (pure) | ✅ |

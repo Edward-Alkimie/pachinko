@@ -165,6 +165,21 @@ Nov 26 is Thanksgiving; Phase 3 has an extra day for it.
 
 **Determinism test (Phase 1):** 1,000+ seeds on Node, Chrome, Firefox, Safari and mobile, comparing outcome hashes. Share results with Kiana right away, because verification depends on it.
 
+How to run it: `npm run determinism` (Node; `-- <rounds>` to change the default 1000) and
+`determinism.html` on the dev server in each browser (`npm run dev -- --host` to reach it from a phone).
+Corpus: seed_i = SHA-256("PACHINKO-DETERMINISM-V1" ‖ u32 BE i), round id i + 1; digest = SHA-256 over all
+result hashes in order, with a checkpoint every 100 rounds (`physics/src/determinism.ts`).
+
+| Platform | Rounds | Digest | Result |
+|---|---|---|---|
+| Node 26.10 · macOS arm64 (Kiana, 2026-11-21) | 1000 | `b89c0d0f4ff8e69d264544967bad90df52671573a0bbb98d7026398ce0d08330` | reference |
+| Node · Windows (Kevin) | 1000 | | ⏳ |
+| Chrome 158 · macOS arm64 (headless, 2026-11-21) | 1000 | `b89c0d0f4ff8e69d264544967bad90df52671573a0bbb98d7026398ce0d08330` | ✅ match |
+| VS Code built-in browser (Electron 43, Chromium 150) · macOS (2026-11-21) | 1000 | `b89c0d0f4ff8e69d264544967bad90df52671573a0bbb98d7026398ce0d08330` | ✅ match (every checkpoint) |
+| Safari 26.6 · macOS (JavaScriptCore, 2026-11-21) | 1000 | `b89c0d0f4ff8e69d264544967bad90df52671573a0bbb98d7026398ce0d08330` | ✅ match (every checkpoint) |
+| Firefox · macOS | 1000 | | ⏳ |
+| Phone browser | 1000 | | ⏳ |
+
 ---
 
 ## 8. Capacity estimate (target: 20 players)
