@@ -32,6 +32,20 @@ export interface Tally {
   readonly landed: number
 }
 
+/** Final counts per pocket for a full list of outcomes, plus the balls that never landed (`-1`). */
+export function countOutcomes(
+  outcomes: readonly number[],
+  pocketCount: number,
+): { readonly perPocket: readonly number[]; readonly never: number } {
+  const perPocket: number[] = new Array(pocketCount).fill(0)
+  let never = 0
+  for (const pocket of outcomes) {
+    if (pocket >= 0 && pocket < pocketCount) perPocket[pocket]++
+    else never++
+  }
+  return { perPocket, never }
+}
+
 /**
  * Pocket counts as they'd look at `tick`: a ball only counts once its
  * landing tick has been reached, so the numbers fill in during playback.

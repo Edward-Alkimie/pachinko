@@ -93,9 +93,14 @@ OnchainPanel: seed on-chain (Flow G)       Replay form ─▶ checkSeed / checkR
                       │
         App derives from { result, tick }:
           frameIndexAt(tick) → frames[i].balls ─▶ <PachinkoCanvas balls> → drawBoard + drawBalls
-          tallyAt(outcomes, landedAtTick, tick) ─▶ <ResultPanel tally>
+          tallyAt(outcomes, landedAtTick, tick) ─▶ <ResultPanel tally>   (+ operator's claimed counts once done)
           status == done ─▶ show resultHash
 ```
+
+The board is the reference result: it is simulated here from the seed (on-chain seeds come from Sui
+randomness), and it is what the operator must report. The UI says "board" for it everywhere, and every ✓/✗
+means "same as the board". The operator's claim is shown against it: its hash as soon as it is submitted, its
+pocket counts only once the balls are down.
 
 ## 3c. Flow E: accounts (backend) ✅
 
@@ -242,13 +247,13 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 
 | Function / component | File | Does | Status |
 |---|---|---|---|
-| `App` | App.tsx | Play / Verify views over one board (both stay mounted; `#verify/<round>` opens Verify). Play: AuthPanel, OnchainPanel. Verify: VerifyPanel + the replay form ("Advanced: replay any seed"). Results under both; derives balls + tally from {result, tick} | ✅ |
+| `App` | App.tsx | Play / Verify views over one board (both stay mounted; `#verify/<round>` opens Verify). Play: AuthPanel, OnchainPanel. Verify: VerifyPanel + the replay form ("Advanced: replay any seed"). Board caption (simulated here from the seed; the operator must report it); Board result under both; derives balls + tally from {result, tick}; collects operator claims from the panels (`reportClaim`, keyed by seed + round) for the Board result | ✅ |
 | `PachinkoCanvas` | game/PachinkoCanvas.tsx | canvas element, DPR, calls drawBoard + drawBalls each frame | ✅ |
 | `drawBoard` / `boardPixelSize` | game/drawBoard.ts | paints the static board | ✅ |
 | `drawBalls` | game/drawBoard.ts | paints the balls of one frame on top | ✅ |
-| `tickAt` / `frameIndexAt` / `tallyAt` | game/playback.ts | real time → tick → frame to show; pocket counts so far | ✅ |
+| `tickAt` / `frameIndexAt` / `tallyAt` / `countOutcomes` | game/playback.ts | real time → tick → frame to show; pocket counts so far; final counts per pocket + never landed (operator's claim) | ✅ |
 | `useRound` | hooks/useRound.ts | start(seed, roundId): runRound, then rAF playback; status idle → simulating → playing → done / error; resolves with the `RoundResult` when playback ends (null if cut short) | ✅ |
-| `ResultPanel` | components/ResultPanel.tsx | status, landed count, tally bars, round, seed, hash | ✅ |
+| `ResultPanel` | components/ResultPanel.tsx | **Board result**: status, landed count, tally bars, never-landed row, round, seed and board hash (Copy); once the balls are down, the operator's claimed counts in an Operator column (differences red, summary line) | ✅ |
 | `SeedInput` | components/SeedInput.tsx | replay form; validates with `checkSeed` / `checkRoundId` (lib/validation.ts) | ✅ |
 | `BOARD_COLORS` | game/theme.ts | colours | ✅ |
 | `API_URL` | services/api.ts | backend base URL: `<base>api` (Vite proxy) unless `VITE_API_URL` | ✅ |
@@ -256,8 +261,9 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `readCookie` / `ApiError` | services/auth.ts | cookie lookup; failed request (status 0 = unreachable) | ✅ |
 | `useAuth` | hooks/useAuth.ts | sign-in state: loading → anonymous / authenticated; login, register, logout, clearError | ✅ |
 | `AuthPanel` | components/AuthPanel.tsx | login/register form (two modes) or "Signed in as …" + Log out | ✅ |
-| `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, status by `stageOf`, replay check, **Challenge** (window open), the committee and its votes while challenged, **refund my bet** after a missed submit deadline, round / bet / challenge / refund links, verdict (committee or admin fallback), wallet net table; off with a reason when no deployment is set | ✅ |
-| `ResultHashes` | components/ResultHashes.tsx | OnchainPanel: Operator submitted hash (as soon as it is on-chain) next to This page's replay hash (once the balls land), submitted marked ✓/✗ | ✅ |
+| `OnchainPanel` | components/OnchainPanel.tsx | on-chain play: wallet, **Play on-chain (0.01 SUI)**, `RoundSteps`, status by `stageOf`, the check worded against the board (`settledCheck`), `ResultHashes`, `ReplayCommand`, **Challenge** with a seconds-left countdown, the committee and its votes, **refund my bet** after a missed submit deadline, round / bet / challenge / refund links, verdict, "Your wallet this round" net table; passes the operator's outcomes to App (`onClaim`); off with a reason when no deployment is set | ✅ |
+| `RoundSteps` / `roundSteps` | components/RoundSteps.tsx, onchain/roundSteps.ts | stage → Bet · Seed · Balls · Operator · Window/Committee · Paid (or Refunded), each done / current / todo | ✅ |
+| `ResultHashes` | components/ResultHashes.tsx | OnchainPanel: Board hash (once the balls land), Operator submitted (as soon as it is on-chain) and Paid on (once final), the last two marked ✓/✗ against the board | ✅ |
 | `CopyValue` / `ReplayCommand` | components/CopyValue.tsx | long value shown shortened (full on hover) + Copy of the full value; the copyable `npm run replay -- <seed> <round>` line (Verify page, OnchainPanel) | ✅ |
 | `WalletPanel` | components/WalletPanel.tsx | "Connect <wallet>" per Sui wallet (dApp Kit `useWallets`), or address (explorer link) + Copy + Disconnect | ✅ |
 | `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried; keeps `submitDeadlineMs`) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `fetchDispute` while challenged → `findFinalized` + `findResolved` (payout, verdict), and `findCommitteeVotes` if it was challenged (the settled votes stay shown); `challenge()` / `refund()` sign `challengeTx` / `refundUnsubmittedTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / refunded / error | ✅ |

@@ -51,7 +51,11 @@ const FORGED_HASH = 'ff'.repeat(32)
 const PLAYER = id('02')
 
 function submission(hashHex: string): chain.SubmissionView {
-  return { deadlineMs: Date.now() + 30_000, resultHash: new Uint8Array(Buffer.from(hashHex, 'hex')) } as chain.SubmissionView
+  return {
+    deadlineMs: Date.now() + 30_000,
+    resultHash: new Uint8Array(Buffer.from(hashHex, 'hex')),
+    outcomes: [3, -1],
+  } as chain.SubmissionView
 }
 
 function view(status: RoundStatus, submitDeadlineMs = 0): RoundView {
@@ -100,7 +104,7 @@ describe('useOnchainRound', () => {
     vi.mocked(chain.fetchRound).mockImplementation(async () => view(statuses.shift() ?? RoundStatus.Finalized))
     const sub = submission(HONEST_HASH)
     vi.mocked(chain.fetchSubmission).mockResolvedValue(sub)
-    vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '12000000' } as Awaited<
+    vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '12000000', result_hash: [7] } as Awaited<
       ReturnType<typeof chain.findFinalized>
     >)
     vi.mocked(chain.findResolved).mockResolvedValue(null)
@@ -133,7 +137,7 @@ describe('useOnchainRound', () => {
     const statuses = [RoundStatus.Seeded, RoundStatus.Submitted, RoundStatus.Submitted]
     vi.mocked(chain.fetchRound).mockImplementation(async () => view(statuses.shift() ?? RoundStatus.Finalized))
     vi.mocked(chain.fetchSubmission).mockResolvedValue(submission(FORGED_HASH))
-    vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '10000000' } as Awaited<
+    vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '10000000', result_hash: [7] } as Awaited<
       ReturnType<typeof chain.findFinalized>
     >)
     vi.mocked(chain.findResolved).mockResolvedValue({
@@ -207,6 +211,7 @@ describe('useOnchainRound', () => {
 
     await act(async () => finishPlayback(HONEST_HASH))
     expect(stageOf(result.current.state)).toBe('verifying')
+    expect(result.current.state.submittedOutcomes).toEqual([3, -1])
     expect(replayCheck(result.current.state)).toBe('mismatch')
   })
 
@@ -235,7 +240,7 @@ describe('useOnchainRound', () => {
       .mockResolvedValue(view(RoundStatus.Finalized))
     vi.mocked(chain.findFinalized)
       .mockResolvedValueOnce(null)
-      .mockResolvedValue({ payout: '0' } as Awaited<ReturnType<typeof chain.findFinalized>>)
+      .mockResolvedValue({ payout: '0', result_hash: [7] } as Awaited<ReturnType<typeof chain.findFinalized>>)
     vi.mocked(chain.findResolved).mockResolvedValue(null)
     vi.spyOn(console, 'warn').mockImplementation(() => {})
 
@@ -245,7 +250,7 @@ describe('useOnchainRound', () => {
       await vi.advanceTimersByTimeAsync(10_000)
     })
 
-    expect(result.current.state).toMatchObject({ phase: 'final', payoutMist: 0n, error: null })
+    expect(result.current.state).toMatchObject({ phase: 'final', payoutMist: 0n, paidHash: '07', error: null })
   })
 
   it('shows the committee and its votes while the round is challenged', async () => {
@@ -276,7 +281,7 @@ describe('useOnchainRound', () => {
       committee: ['0xa', '0xb', '0xc'],
       votes: [{ voter: '0xa', resultHash: honest }],
     })
-    vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '0' } as Awaited<ReturnType<typeof chain.findFinalized>>)
+    vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '0', result_hash: [7] } as Awaited<ReturnType<typeof chain.findFinalized>>)
     vi.mocked(chain.findResolved).mockResolvedValue({
       operator_honest: true,
       winner: '0x3',

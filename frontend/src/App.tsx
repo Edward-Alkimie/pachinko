@@ -6,6 +6,10 @@
  *   - tally               = balls whose landing tick has passed
  *   - hash                = shown once playback finishes
  *
+ * The board is the reference result: simulated here from the seed, it is what the operator must report.
+ * The panels pass on each operator claim they read (`reportClaim`, keyed by seed + round, so a custom
+ * seed never matches); the Board result shows it next to the board's counts once the balls are down.
+ *
  * Sign-in (useAuth + AuthPanel) sits above the controls. Playing does not
  * need an account yet; rounds will be tied to the signed-in user later.
  *
@@ -35,6 +39,8 @@ import './App.css'
 
 const CONFIG = DEFAULT_CONFIG
 
+const claimKey = (seedHex: string, roundId: bigint) => `${seedHex}:${roundId}`
+
 /** Shows `route` in the address bar without adding a history entry. */
 function showRoute(route: Route) {
   window.history.replaceState(null, '', routeHash(route) || window.location.pathname)
@@ -52,6 +58,12 @@ function App() {
     setRoute(next)
     showRoute(next)
   }
+  // The operator's claimed outcomes per round, keyed by seed + round.
+  const [claims, setClaims] = useState<Record<string, readonly number[]>>({})
+  const reportClaim = useCallback((seedHex: string, roundId: bigint, outcomes: readonly number[]) => {
+    const key = claimKey(seedHex, roundId)
+    setClaims((c) => (c[key] ? c : { ...c, [key]: outcomes }))
+  }, [])
   const { state, start } = useRound(CONFIG)
   const { result, tick, status } = state
   const isBusy = status === 'simulating'
@@ -65,6 +77,7 @@ function App() {
 
   const frameIndex = result ? frameIndexAt(tick, RECORD_EVERY, result.frames.length) : -1
   const balls = result && frameIndex >= 0 ? result.frames[frameIndex].balls : []
+  const claim = state.seedHex && state.roundId !== null ? (claims[claimKey(state.seedHex, state.roundId)] ?? null) : null
   const tally = result
     ? tallyAt(result.outcomes, result.landedAtTick, tick, CONFIG.pockets.length)
     : { perPocket: CONFIG.pockets.map(() => 0), landed: 0 }
@@ -87,12 +100,19 @@ function App() {
       </header>
 
       <div className="layout">
-        <PachinkoCanvas config={CONFIG} balls={balls} />
+        <figure className="board">
+          <PachinkoCanvas config={CONFIG} balls={balls} />
+          <figcaption>
+            <strong>{state.roundId === null ? 'The board' : `Round #${state.roundId}`}</strong> · simulated in your
+            browser from the round's seed. On-chain seeds come from Sui randomness, so nobody can pick them, and the
+            operator must report exactly what the board shows.
+          </figcaption>
+        </figure>
 
         <aside className="side">
           <div className="side" hidden={route.view !== 'play'}>
             <AuthPanel state={authState} {...authActions} />
-            <OnchainPanel onSeed={playReplay} />
+            <OnchainPanel onSeed={playReplay} onClaim={reportClaim} />
           </div>
           {route.view === 'verify' &&
             (verify ? (
@@ -102,6 +122,7 @@ function App() {
                 initialRound={route.round}
                 onRoundChange={(round) => showRoute({ view: 'verify', round })}
                 playOnBoard={playReplay}
+                onClaim={reportClaim}
                 boardBusy={status === 'simulating' || status === 'playing'}
               />
             ) : (
@@ -114,6 +135,7 @@ function App() {
             seedHex={state.seedHex}
             roundId={state.roundId}
             resultHash={status === 'done' ? (result?.resultHash ?? null) : null}
+            operatorOutcomes={status === 'done' ? claim : null}
             error={state.error}
           />
           {route.view === 'verify' && (

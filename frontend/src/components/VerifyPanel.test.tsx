@@ -59,6 +59,7 @@ function renderPanel(boardBusy: boolean, playOnBoard = landingBoard()) {
       onRoundChange={vi.fn()}
       playOnBoard={playOnBoard}
       boardBusy={boardBusy}
+      onClaim={vi.fn()}
     />,
   )
   return playOnBoard
@@ -70,10 +71,10 @@ describe('VerifyPanel', () => {
   it('plays the round on a free board by itself, and checks it with that replay', async () => {
     mockSettledRound()
     const playOnBoard = renderPanel(false)
-    expect(await screen.findByText(/Verified: the player was paid/)).toBeTruthy()
+    expect(await screen.findByText(/Verified: the operator's result matches the board/)).toBeTruthy()
     expect(playOnBoard).toHaveBeenCalledWith(GOLDEN_SEED_HEX, 1n)
     expect(playOnBoard).toHaveBeenCalledTimes(1)
-    // "This page's replay" and "Payout used" both show the golden hash; the payout is marked ✓.
+    // "Board" and "Paid on" both show the golden hash; the payout is marked ✓.
     expect(screen.getAllByText('06e86fe4…8151')).toHaveLength(2)
     expect(screen.getByText('✓')).toBeTruthy()
   }, 30_000)
@@ -86,7 +87,7 @@ describe('VerifyPanel', () => {
     expect(playOnBoard).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Replay on the board' }))
-    expect(await screen.findByText(/Verified: the player was paid/)).toBeTruthy()
+    expect(await screen.findByText(/Verified: the operator's result matches the board/)).toBeTruthy()
     expect(playOnBoard).toHaveBeenCalledTimes(1)
   }, 30_000)
 

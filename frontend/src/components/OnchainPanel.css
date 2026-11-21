@@ -37,3 +37,8 @@
 .onchain-panel .result-hashes .match { color: #98c379; }
 .onchain-panel .result-hashes .mismatch { color: #e06c75; }
 .onchain-panel .result-hashes .pending { color: #8a94a6; font-style: italic; }
+.onchain-panel .round-steps { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 0.75rem; }
+.onchain-panel .round-steps li { padding: 2px 8px; border-radius: 999px; border: 1px solid #2c3850; color: #8a94a6; }
+.onchain-panel .round-steps li.done { color: #98c379; border-color: #2f4a35; }
+.onchain-panel .round-steps li.current { color: #0b0f17; background: #e5c07b; border-color: #e5c07b; font-weight: 600; }
+.onchain-panel .section-title { margin: 0; color: #8a94a6; font-size: 0.85rem; }

@@ -99,6 +99,10 @@ export interface OnchainState {
   readonly deadlineMs: number | null
   /** Hash the operator submitted. */
   readonly submittedHash: string | null
+  /** The operator's claimed pocket per ball (`-1` = never landed), once submitted. */
+  readonly submittedOutcomes: readonly number[] | null
+  /** Hash of the result the payout used (from `Finalized`), once final. */
+  readonly paidHash: string | null
   /** When the bet becomes refundable if no result was submitted (`0` until seeded). */
   readonly submitDeadlineMs: number
   /** The committee vote: live while the round is challenged, then as it was settled. */
@@ -124,6 +128,8 @@ const INITIAL: OnchainState = {
   replayHash: null,
   deadlineMs: null,
   submittedHash: null,
+  submittedOutcomes: null,
+  paidHash: null,
   submitDeadlineMs: 0,
   dispute: null,
   walletAction: null,
@@ -266,7 +272,13 @@ export function useOnchainRound(
       if (phase === 'verifying') {
         const submission = await fetchSubmission(client, deployment, objectId)
         const submittedHash = toHex(submission.resultHash)
-        setState((s) => ({ ...s, phase, deadlineMs: submission.deadlineMs, submittedHash }))
+        setState((s) => ({
+          ...s,
+          phase,
+          deadlineMs: submission.deadlineMs,
+          submittedHash,
+          submittedOutcomes: submission.outcomes,
+        }))
         return { settled: false, seedPlayed }
       }
       if (phase === 'final') {
@@ -297,6 +309,7 @@ export function useOnchainRound(
           ...s,
           phase,
           payoutMist: BigInt(finalized.payout),
+          paidHash: toHex(Uint8Array.from(finalized.result_hash)),
           resolution,
           dispute: dispute ?? s.dispute,
         }))

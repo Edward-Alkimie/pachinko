@@ -3,6 +3,17 @@
 Physics-decided, replay-verifiable pachinko on Sui. See `docs/` for the spec and plan
 (`docs/ARCHITECTURE.md` maps how the parts connect).
 
+## How it works
+
+- **Sui draws the seed** for each round with on-chain randomness, so neither the player nor the operator picks it.
+- **The board is the truth.** Your browser simulates the round from the seed with the shared physics. Any
+  seed always gives the same 100 pockets, for everyone.
+- **The operator reports the result** on-chain (outcomes + hash, with a bond). The contract can't run physics
+  itself, so it accepts the report for a short challenge window.
+- **Anyone can check it** against the board. If the operator lied (e.g. "every ball missed"), a challenge sends
+  it to a committee of staked verifiers, who re-run the seed and vote. The liar loses their bond.
+- Don't trust the website? `npm run replay -- <seed> <round>` prints the same board hash.
+
 ## Layout
 
 | Folder | What | Stack |
@@ -64,9 +75,9 @@ Details and troubleshooting: `contracts/pachinko/README.md`.
    Without it, challenges are settled by the admin fallback after the vote window.
 3. Terminal 3: `npm run dev` → open `http://<host>/absproxy/5180/`.
 4. Under **On-chain play**, connect a wallet (e.g. Slush, on testnet, with some test SUI) → **Play on-chain**.
-5. Once the balls land, the page compares its replay with the submitted result. While the challenge window is
-   open you can **Challenge** (try it with `OPERATOR_CHEAT=shortchange` in `.env`); the panel then shows the
-   committee's votes. It ends with your net. If the operator sends no result within 2 minutes of the seed, the
+5. Once the balls land, the page checks the operator's result against the board (hashes in the panel, pocket
+   counts in **Board result**). While the challenge window is open you can **Challenge** (try it with
+   `OPERATOR_CHEAT=shortchange` in `.env`); the panel then shows the committee's votes. It ends with your net. If the operator sends no result within 2 minutes of the seed, the
    panel offers **refund my bet**.
 6. **Verify** (top of the page): enter any round number to see what the chain records for it (seed, submitted
    and paid result, challenge, committee votes, payout) and watch it replay on the board. When the balls land, the
@@ -95,11 +106,12 @@ Open the page with `npm run dev`.
 
 **Regular round**
 1. `npm run operator`
-2. On the page: **Play on-chain** → sign. The replay should **match** and the round pays out after the challenge window.
+2. On the page: **Play on-chain** → sign. "✓ The operator's result matches the board", and the round pays out after the challenge window.
 
 **Forged round, no committee** (admin settles it)
 1. Set `OPERATOR_CHEAT=shortchange` in `.env`, then `npm run operator`.
-2. **Play on-chain** → the replay shows a **mismatch** → **Challenge**.
+2. **Play on-chain** → the balls land normally, but "✗ The operator's result does not match the board", and
+   **Board result** shows the operator claiming 0 in every pocket and 100 "never landed" → **Challenge**.
 3. After the vote window (60 s), the operator's admin fallback settles it: verdict "caught", and the challenger wins the bond.
 
 **Forged round, with committee** (verifiers vote)

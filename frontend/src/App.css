@@ -26,6 +26,9 @@
 }
 .side { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 380px; }
 
+.board { margin: 0; display: grid; gap: 8px; max-width: 100%; }
+.board figcaption { max-width: 560px; color: #8a94a6; font-size: 0.8rem; line-height: 1.4; }
+.board figcaption strong { color: #e6e9ef; font-weight: 600; }
 .pachinko-canvas { max-width: 100%; height: auto !important; border-radius: 8px; }
 
 button {
@@ -44,6 +47,10 @@ button.start:hover:not(:disabled) { background: #d09d36; }
 
 /* Result panel */
 .result-panel { background: #18202e; border-radius: 8px; padding: 16px; }
+.result-panel h2 { margin: 0 0 6px; font-size: 1rem; }
+.result-panel .claim-summary { margin: 0 0 10px; font-size: 0.85rem; }
+.result-panel .claim-summary.match { color: #98c379; }
+.result-panel .claim-summary.mismatch { color: #e06c75; font-weight: 600; }
 .result-panel .status { margin: 0 0 8px; color: #e5c07b; }
 .result-panel .landed { margin: 0 0 12px; }
 .tally { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 6px; }
@@ -51,6 +58,12 @@ button.start:hover:not(:disabled) { background: #d09d36; }
 .tally .pocket-id { color: #e5c07b; font-weight: 600; text-align: center; }
 .tally .bar { height: 10px; background: #5e81ac; border-radius: 4px; min-width: 2px; transition: width 120ms linear; }
 .tally .count { text-align: right; font-variant-numeric: tabular-nums; }
+.tally.with-operator li { grid-template-columns: 1.5em 1fr 3.5em 4.5em; }
+.tally .head { color: #8a94a6; font-size: 0.75rem; }
+.tally .never .label { color: #8a94a6; font-size: 0.8rem; }
+.tally .never .pocket-id { color: #8a94a6; }
+.tally .operator { color: #8a94a6; }
+.tally .differs .operator { color: #e06c75; font-weight: 600; }
 .round-info { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.85rem; }
 .round-info dt { color: #8a94a6; }
 .round-info dd { margin: 0; }

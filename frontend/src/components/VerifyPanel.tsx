@@ -13,6 +13,7 @@ import {
   RoundStatus,
   TESTNET_EXPLORER_ACCOUNT,
   TESTNET_EXPLORER_OBJECT,
+  fromOnchainOutcomes,
   type Deployment,
 } from '@pachinko/chain'
 import { DEFAULT_CONFIG } from '@pachinko/physics'
@@ -34,15 +35,17 @@ interface Props {
   readonly playOnBoard: (seedHex: string, roundId: bigint) => Promise<string | null>
   /** The board is playing a round: don't take it over without a click. */
   readonly boardBusy: boolean
+  /** Passes on the operator's claimed outcomes (shown next to the board's counts). */
+  readonly onClaim: (seedHex: string, roundId: bigint, outcomes: readonly number[]) => void
 }
 
 const VERDICT_TEXT: Record<Verdict, string> = {
-  verified: "✓ Verified: the player was paid from exactly the result of the replay you just watched.",
-  caught: '✓ A forged result was challenged and overturned; the player was paid from the result of the replay you just watched.',
-  upheld: '✓ A challenge failed (the operator was honest); the player was paid from the result of the replay you just watched.',
+  verified: "✓ Verified: the operator's result matches the board, and the player was paid on it.",
+  caught: "✓ The operator's forged result was challenged and overturned; the player was paid on the board's result.",
+  upheld: "✓ A challenge failed (the operator was honest); the player was paid on the board's result.",
   unchallenged:
-    "✗ The operator's result does not match the replay you just watched, but nobody challenged it in time, so the player was paid from the wrong result.",
-  paidMismatch: '✗ The player was paid from a result the replay you just watched does NOT give, even after a challenge.',
+    "✗ The operator's result does not match the board, but nobody challenged it in time, so the player was paid on the wrong result.",
+  paidMismatch: '✗ The player was paid on a result that does NOT match the board, even after a challenge.',
   refunded: 'No result arrived in time, so the bet was refunded.',
   inProgress: 'This round is not settled yet.',
 }
@@ -59,7 +62,7 @@ const STATUS_NAME: Record<RoundStatus, string> = {
 const sui = (mist: bigint | string) => `${Number(mist) / 1e9} SUI`
 const hashOf = (bytes: number[]) => toHex(Uint8Array.from(bytes))
 
-export function VerifyPanel({ deployment, client, initialRound, onRoundChange, playOnBoard, boardBusy }: Props) {
+export function VerifyPanel({ deployment, client, initialRound, onRoundChange, playOnBoard, boardBusy, onClaim }: Props) {
   const { state, verify, replayOnBoard, ownReplayPlaying } = useVerifyRound(deployment, client, playOnBoard)
   // Busy with someone else's round (e.g. an on-chain round from the Play view), not an earlier Verify replay.
   const boardTaken = boardBusy && !ownReplayPlaying
@@ -69,6 +72,12 @@ export function VerifyPanel({ deployment, client, initialRound, onRoundChange, p
   useEffect(() => {
     if (initialRound !== null) void verify(initialRound)
   }, [initialRound, verify])
+
+  useEffect(() => {
+    if (state.status !== 'done') return
+    const { seedHex, round, history } = state.result
+    if (seedHex && history.submitted) onClaim(seedHex, round.roundId, fromOnchainOutcomes(history.submitted.outcomes))
+  }, [state, onClaim])
 
   // Each verified round plays on the board by itself (that replay is the check), unless the board is busy.
   const autoReplay = state.status === 'done' && state.replay === 'none' && state.result.canReplay && !boardTaken
@@ -149,12 +158,12 @@ function Report({ result, replay, onReplay, boardBusy }: ReportProps) {
         {seedHex ? <CopyValue label="seed" value={seedHex} /> : <dd>not drawn yet</dd>}
         {replayHash && (
           <>
-            <dt>This page's replay</dt>
-            <CopyValue label="this page's replay hash" value={replayHash} />
+            <dt>Board</dt>
+            <CopyValue label="board hash" value={replayHash} />
           </>
         )}
         {submitted && <HashRow label="Operator submitted" hash={submitted} replayHash={replayHash} />}
-        {paid && <HashRow label="Payout used" hash={paid} replayHash={replayHash} />}
+        {paid && <HashRow label="Paid on" hash={paid} replayHash={replayHash} />}
         {history.challenged && (
           <>
             <dt>Challenged by</dt>
@@ -205,7 +214,7 @@ function Report({ result, replay, onReplay, boardBusy }: ReportProps) {
       {(replayHash || submitted || paid) && (
         <p className="hint">
           Each hash is a fingerprint (SHA-256) of where the round's 100 balls landed.
-          {replayHash && " ✓ = same as this page's replay, ✗ = different."}
+          {replayHash && ' ✓ = same as the board, ✗ = different.'}
         </p>
       )}
       {seedHex && canReplay && (
@@ -232,7 +241,7 @@ function waitingText(result: VerifiedRound, replay: BoardReplay, boardBusy: bool
   if (!canReplay) {
     return `This round uses physics ${round.configVersion}; this page runs ${DEFAULT_CONFIG.version}, so it can't replay it.`
   }
-  if (replay === 'playing') return 'Replaying the round on the board… the check appears when the balls land.'
+  if (replay === 'playing') return "Replaying the round on the board… the operator's result is checked against it when the balls land."
   if (replay === 'interrupted') return 'The replay was stopped before the balls landed, so it was not checked.'
   if (boardBusy) return 'The board is busy with another round. Replay this one on the board to check it.'
   return 'This is what the chain records.'
@@ -253,10 +262,10 @@ function HashRow({ label, hash, replayHash }: { label: string; hash: string; rep
   )
 }
 
-/** How a committee vote reads: against this page's replay once it has landed, else against the submitted result. */
+/** How a committee vote reads: against the board once its balls have landed, else against the submitted result. */
 function voteText(voteHash: string | null, replayHash: string | null, submitted: string | null): string {
   if (voteHash === null) return 'no vote'
-  if (replayHash !== null) return voteHash === replayHash ? "voted ✓ same as this page's replay" : 'voted ✗ a different result'
+  if (replayHash !== null) return voteHash === replayHash ? 'voted ✓ same as the board' : 'voted ✗ a different result'
   return voteHash === submitted ? 'voted: the submitted result is right' : 'voted: the submitted result is wrong'
 }
 
