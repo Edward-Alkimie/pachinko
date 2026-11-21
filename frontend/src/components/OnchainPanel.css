@@ -11,3 +11,9 @@
 .onchain-panel .error { margin: 0; color: #e06c75; font-size: 0.85rem; }
 .onchain-panel a { color: #88c0d0; }
 .onchain-panel strong { color: #e5c07b; }
+.onchain-panel .check { margin: 0; font-size: 0.85rem; }
+.onchain-panel .check.pending { color: #8a94a6; }
+.onchain-panel .check.match { color: #98c379; }
+.onchain-panel .check.mismatch { color: #e06c75; font-weight: 600; }
+.onchain-panel button.challenge { background: #e06c75; border-color: #e06c75; color: #0b0f17; font-weight: 600; }
+.onchain-panel button.challenge:hover:not(:disabled) { background: #f08a92; border-color: #f08a92; }
