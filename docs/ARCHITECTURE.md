@@ -161,7 +161,7 @@ deploy:testnet → chain/src/deployments/<PACHINKO_DEPLOYMENT>.json
   setUpHouse                         ──────▶ issue_operator_cap, create_house; fund_house
 a round (player + operator, Flow G)
 createRound(bet coin)                ──────▶ round::create_round      → BET_LOCKED    RoundCreated (round_id, config_version)
-drawSeed (separate tx)               ──────▶ round::draw_seed(Random) → SEEDED        SeedDrawn (seed)
+drawSeed (separate tx)               ──────▶ round::draw_seed(Random, Clock) → SEEDED SeedDrawn (seed, submit_deadline_ms)
 runRound(seed, round_id)  (physics/, off-chain)
 submitResult(outcomes, hash, bond)   ──────▶ verification::submit_result → SUBMITTED  ResultSubmitted (deadline_ms)
                                               └─ result_hash = sha2_256(SPEC §3 bytes) must match
@@ -293,9 +293,10 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 
 | Function | Module | Does | Owner | Status |
 |---|---|---|---|---|
-| `create_round` | round | lock bet in a new shared `Round` (→ BET_LOCKED), emit `RoundCreated` | Kevin | ✅ |
-| `draw_seed` | round | non-public `entry`; 32 bytes from `sui::random` (→ SEEDED), emit `SeedDrawn` | Kevin | ✅ |
-| `set_config_version` | round | admin: physics version for new rounds | Kevin | ✅ |
+| `create_round` | round | lock bet in a new shared `Round` (→ BET_LOCKED), copies `config_version` + `submit_window_ms`, emit `RoundCreated` | Kevin | ✅ |
+| `draw_seed` | round | non-public `entry`; 32 bytes from `sui::random` (→ SEEDED), sets `submit_deadline_ms`, emit `SeedDrawn` | Kevin | ✅ |
+| `refund_unsubmitted` | round | no result by `submit_deadline_ms`: bet back to the player (SEEDED → REFUNDED), emit `Refunded` | Kevin (written by Kiana) | ✅ |
+| `set_config_version` / `set_submit_window` | round | admin: physics version / submit window for new rounds | Kevin | ✅ |
 | `mark_submitted` / `mark_challenged` / `finalize_unchallenged` / `finalize_disputed` | round | `public(package)` status transitions used by `verification` | Kevin | ✅ |
 | `issue_operator_cap` / `create_house` / `fund_house` / `withdraw_house` | verification | admin setup: operator, payout table, bonds, window, treasury | Kiana | ✅ |
 | `submit_result` | verification | operator posts outcomes + hash (checked with `result_hash`), locks bond, starts window (→ SUBMITTED) | Kiana | ✅ |

@@ -128,13 +128,6 @@ fun challenge(scenario: &mut Scenario) {
     ts::return_shared(round);
 }
 
-fun advance_clock(scenario: &mut Scenario, ms: u64) {
-    scenario.next_tx(admin());
-    let mut clock = scenario.take_shared<Clock>();
-    clock.increment_for_testing(ms);
-    ts::return_shared(clock);
-}
-
 fun finalize(scenario: &mut Scenario) {
     scenario.next_tx(PLAYER);
     let mut round = scenario.take_shared<Round>();
@@ -148,7 +141,7 @@ fun finalize(scenario: &mut Scenario) {
 
 /// The admin fallback, once the vote deadline has passed.
 fun resolve(scenario: &mut Scenario, correct_outcomes: vector<u16>) {
-    advance_clock(scenario, VOTE_WINDOW_MS);
+    test_helpers::advance_clock(scenario, VOTE_WINDOW_MS);
     resolve_now(scenario, correct_outcomes);
 }
 
@@ -292,7 +285,7 @@ fun result_hash_encodes_unlanded_ball_as_minus_one() {
 fun honest_round_pays_player_and_returns_operator_bond() {
     let mut scenario = setup();
     submit(&mut scenario, honest_outcomes());
-    advance_clock(&mut scenario, WINDOW_MS);
+    test_helpers::advance_clock(&mut scenario, WINDOW_MS);
     finalize(&mut scenario);
 
     assert_settled_honestly(&mut scenario);
@@ -381,11 +374,25 @@ fun submitting_twice_aborts() {
     scenario.end();
 }
 
+#[test, expected_failure(abort_code = round::ENotSeeded)]
+fun submit_after_refund_aborts() {
+    let mut scenario = setup();
+    test_helpers::advance_clock(&mut scenario, 120_000); // round::INITIAL_SUBMIT_WINDOW_MS
+    scenario.next_tx(PLAYER);
+    let mut round = scenario.take_shared<Round>();
+    let clock = scenario.take_shared<Clock>();
+    round.refund_unsubmitted(&clock, scenario.ctx());
+    ts::return_shared(clock);
+    ts::return_shared(round);
+    submit(&mut scenario, honest_outcomes());
+    scenario.end();
+}
+
 #[test, expected_failure(abort_code = verification::EWindowClosed)]
 fun challenge_after_window_aborts() {
     let mut scenario = setup();
     submit(&mut scenario, forged_outcomes());
-    advance_clock(&mut scenario, WINDOW_MS);
+    test_helpers::advance_clock(&mut scenario, WINDOW_MS);
     challenge(&mut scenario);
     scenario.end();
 }
@@ -403,7 +410,7 @@ fun second_challenge_aborts() {
 fun finalize_during_window_aborts() {
     let mut scenario = setup();
     submit(&mut scenario, honest_outcomes());
-    advance_clock(&mut scenario, WINDOW_MS - 1);
+    test_helpers::advance_clock(&mut scenario, WINDOW_MS - 1);
     finalize(&mut scenario);
     scenario.end();
 }
@@ -413,7 +420,7 @@ fun finalize_while_challenged_aborts() {
     let mut scenario = setup();
     submit(&mut scenario, forged_outcomes());
     challenge(&mut scenario);
-    advance_clock(&mut scenario, WINDOW_MS);
+    test_helpers::advance_clock(&mut scenario, WINDOW_MS);
     finalize(&mut scenario);
     scenario.end();
 }
@@ -422,7 +429,7 @@ fun finalize_while_challenged_aborts() {
 fun finalizing_twice_aborts() {
     let mut scenario = setup();
     submit(&mut scenario, honest_outcomes());
-    advance_clock(&mut scenario, WINDOW_MS);
+    test_helpers::advance_clock(&mut scenario, WINDOW_MS);
     finalize(&mut scenario);
     finalize(&mut scenario);
     scenario.end();
@@ -449,7 +456,7 @@ fun finalize_aborts_when_house_cannot_pay() {
     scenario.return_to_sender(cap);
 
     submit(&mut scenario, forged_outcomes()); // pays 3 × BET, house only has the bet
-    advance_clock(&mut scenario, WINDOW_MS);
+    test_helpers::advance_clock(&mut scenario, WINDOW_MS);
     finalize(&mut scenario);
     scenario.end();
 }
@@ -595,7 +602,7 @@ fun voting_twice_aborts() {
 #[test, expected_failure(abort_code = committee::EVotingClosed)]
 fun vote_after_deadline_aborts() {
     let (mut scenario, drawn) = challenged_with_committee(forged_outcomes());
-    advance_clock(&mut scenario, VOTE_WINDOW_MS);
+    test_helpers::advance_clock(&mut scenario, VOTE_WINDOW_MS);
     vote(&mut scenario, drawn[0], honest_outcomes());
     scenario.end();
 }

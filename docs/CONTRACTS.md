@@ -42,20 +42,24 @@ create_round ──▶  draw_seed  ──▶    run runRound(seed) off-chain
                                                                 │
                                                      challenge (now < deadline)
                                                                 ▼
-                                                          CHALLENGED(3) ──resolve_by_admin──▶ FINALIZED(4)
+                                                          CHALLENGED(3) ──2 matching votes / admin fallback──▶ FINALIZED(4)
+
+ SEEDED(1) ──refund_unsubmitted (now ≥ submit_deadline, no result)──▶ REFUNDED(5)
 ```
 
 - There is no cancel function: once a bet is locked, the round can only move forward (fairness rule 3).
-- Every transition is one `public(package)` function in `round` that asserts the current
-  status and aborts with a named error (`ESeedAlreadyDrawn`, `ENotSeeded`, `ENotSubmitted`, `ENotChallenged`).
+  The one way back is the refund when the operator never submits, and its window is fixed per round
+  before the seed exists (§11.4), so the player cannot use it to undo a losing round.
+- Every transition asserts the current status and aborts with a named error (`ESeedAlreadyDrawn`,
+  `ENotSeeded`, `ENotSubmitted`, `ENotChallenged`); the ones `verification` drives are `public(package)`.
 
 ## 3. Objects
 
 | Object | Module | Kind | Fields |
 |---|---|---|---|
 | `AdminCap` | round | owned (publisher) | `id` |
-| `Game` | round | shared, one per package | `id`, `next_round_id: u64` (starts at 1), `config_version: String` |
-| `Round` | round | shared, one per round | `id`, `round_id: u64`, `player: address`, `config_version: String`, `seed: vector<u8>` (empty until drawn, then 32 bytes), `bet: Balance<SUI>`, `status: u8` |
+| `Game` | round | shared, one per package | `id`, `next_round_id: u64` (starts at 1), `config_version: String`, `submit_window_ms: u64` (starts at 120 000) |
+| `Round` | round | shared, one per round | `id`, `round_id: u64`, `player: address`, `config_version: String`, `seed: vector<u8>` (empty until drawn, then 32 bytes), `bet: Balance<SUI>`, `status: u8`, `submit_window_ms: u64` (copied from `Game`), `submit_deadline_ms: u64` (set by `draw_seed`) |
 | `OperatorCap` | verification | owned (issued by admin) | `id` |
 | `House` | verification | shared (created by admin) | `id`, `treasury: Balance<SUI>`, `multipliers_bps: vector<u64>` (one per pocket), `balls_per_round: u64`, `operator_bond: u64`, `challenger_bond: u64`, `challenge_window_ms: u64`, `vote_window_ms: u64`, `pool: Pool` |
 | `Pool` | committee | inside `House` | `stake: u64`, `members: vector<address>`, `verifiers: Table<address, Verifier { stake, open_duties }>` |
@@ -73,8 +77,9 @@ create_round ──▶  draw_seed  ──▶    run runRound(seed) off-chain
 | Function | Who | From → to |
 |---|---|---|
 | `create_round(game, bet: Coin<SUI>, ctx)` | player | — → BET_LOCKED (shares `Round`) |
-| `entry draw_seed(round, r: &Random, ctx)` (non-public) | anyone | BET_LOCKED → SEEDED |
-| `set_config_version(&AdminCap, game, version)` | admin | — (new rounds use it) |
+| `entry draw_seed(round, r: &Random, clock, ctx)` (non-public) | anyone | BET_LOCKED → SEEDED (starts the submit window) |
+| `refund_unsubmitted(round, clock, ctx)` | anyone (bet goes to the player) | SEEDED → REFUNDED, now ≥ `submit_deadline_ms` |
+| `set_config_version(&AdminCap, game, version)` / `set_submit_window(&AdminCap, game, ms)` | admin | — (new rounds use them) |
 
 `verification`
 | Function | Who | From → to |
@@ -106,7 +111,7 @@ the verdict comes from comparing hashes, so no arbiter can rule "honest" while p
 
 ## 5. Events
 
-One per state change: `RoundCreated`, `SeedDrawn`, `ResultSubmitted`, `Challenged`, `Resolved`
+One per state change: `RoundCreated`, `SeedDrawn` (+ `submit_deadline_ms`), `Refunded`, `ResultSubmitted`, `Challenged`, `Resolved`
 (a settled dispute also emits `Finalized`), `Finalized`, `CommitteeSelected`, `Voted`, and from `committee`
 (the pool): `VerifierJoined`, `VerifierLeft`, `VerifierSlashed`. Fields: `docs/SPEC.md` §7.
 
@@ -151,7 +156,7 @@ deterministic, every dispute has one correct answer.
 | 1 | Real multipliers / RTP per pocket (Phase 4 odds) | admin-set `multipliers_bps`; pool funding agreed (§6) |
 | 2 | Payout cap, and checking that the house can cover a bet when it is placed | none: `finalize` aborts (`EHouseInsolvent`) until the house is funded |
 | 3 | `withdraw_house` can take funds that pending rounds need | admin is trusted for now |
-| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | none: the round waits. Design: §11.4 |
+| 4 | Timeout if the operator never submits, or the arbiter never resolves (Phase 3 fallback) | operator: refund after the round's submit window (§11.4, built in Move). Arbiter never resolving after a failed committee: still waits |
 | 5 | Committee of staked verifiers (2-of-3) replacing `AdminCap` arbitration | built in Move (§11); verifier node, page and testnet run next |
 | 8 | Who detects wrong results (§1, step 1): player, plus an optional watchdog | the player: the page and `bet:testnet` compare hashes and challenge; no watchdog yet |
 | 6 | Bond sizes and challenge window length | admin sets them per `House` |
@@ -306,7 +311,7 @@ Slush wallet `0x53d1…f332` (a different address from the operator `0x7584…06
   (`11e91546…217f`). The arbiter found the operator honest (`AA2ZKTom…cGkX`): both bonds went to the operator,
   so the wallet lost its 0.01 SUI bond. Rounds 12, 14 and 15 were further forged results caught the same way.
 
-## 11. Committee and timeout (design 2026-11-21; committee built in Move, timeout next)
+## 11. Committee and timeout (design 2026-11-21; both built in Move)
 
 Replaces the single admin arbiter (step 2 of §1, "resolve") with a committee of staked verifiers drawn at
 random after a challenge, and adds a timeout for an operator who never submits. Decided with Kiana:
@@ -368,16 +373,21 @@ New events: `CommitteeSelected { round, committee, deadline_ms }`, `Voted { roun
 (verification), `VerifierJoined`, `VerifierLeft`, `VerifierSlashed { verifier, amount }` (committee).
 `Resolved` gains `by_committee: bool`.
 
-### 11.4 Timeout: the operator never submits (needs Kevin: `round` module)
+### 11.4 Timeout: the operator never submits (`round` module, agreed with Kevin)
 
 - **Never seeded:** no timeout needed. `draw_seed` is open to anyone, so the player can draw the seed.
-- **Seeded, never submitted:** after `submit_window_ms` from the seed, the player calls
-  `refund_unsubmitted(round, house, clock)` → bet back, new status `REFUNDED` (5). There is no operator bond
-  to take yet (it is posted at submit), so a stalling operator only loses the round.
-- **`round` changes (Kevin):** `draw_seed` takes the `Clock` and stores `seeded_at_ms`; new status
-  `REFUNDED = 5`; new `public(package) fun mark_refunded(round): Balance<SUI>` (SEEDED → REFUNDED), called by
-  `verification::refund_unsubmitted`.
-  `draw_seed` gaining a `Clock` argument changes its signature (SPEC §7).
+- **Seeded, never submitted:** `draw_seed` sets `submit_deadline_ms = now + submit_window_ms`. After it,
+  anyone may call `round::refund_unsubmitted(round, clock)`: the bet goes back to the player, status
+  `REFUNDED` (5), event `Refunded`. There is no operator bond to take yet (it is posted at submit), so a
+  stalling operator only loses the round. A late result is still accepted as long as nobody has refunded.
+- **The window is fixed per round, before the seed.** The admin sets `submit_window_ms` on the `Game`
+  (`set_submit_window`, starts at 2 minutes), and `create_round` copies it into the `Round`. The first draft
+  read the window from a `House` passed to the refund, but a round is not tied to a House until a result is
+  submitted: a player could pass their own House with a 1 ms window, see the public seed, simulate it, and
+  refund only losing rounds. Copying the window at bet time closes that.
+- **Limit (for the report):** a colluding operator could still stall on purpose on a colluding player's losing
+  rounds. Today operator and House are the same party, so it has no reason to; a split operator would need a
+  penalty for missing the window.
 
 ### 11.5 Off-chain pieces
 

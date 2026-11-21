@@ -98,22 +98,27 @@ Sui testnet, Move 2024. Design and open decisions: `docs/CONTRACTS.md`.
 | `player` | `address` | Placed the bet; receives the payout |
 | `config_version` | `String` | Physics version the result must use (copied from `Game` at creation; starts `pachinko-v0.1.0`) |
 | `seed` | `vector<u8>` | Empty until drawn, then 32 bytes from `sui::random` (the §2 seed) |
-| `bet` | `Balance<SUI>` | Locked until finalized |
-| `status` | `u8` | `0` BET_LOCKED · `1` SEEDED · `2` SUBMITTED · `3` CHALLENGED · `4` FINALIZED |
+| `bet` | `Balance<SUI>` | Locked until finalized or refunded |
+| `status` | `u8` | `0` BET_LOCKED · `1` SEEDED · `2` SUBMITTED · `3` CHALLENGED · `4` FINALIZED · `5` REFUNDED |
+| `submit_window_ms` | `u64` | Copied from `Game` at creation (admin-set; starts at 120 000) |
+| `submit_deadline_ms` | `u64` | `0` until seeded, then seed time + `submit_window_ms`; no result by then → refundable |
 
 Entry functions:
 ```move
 public fun create_round(game: &mut Game, bet: Coin<SUI>, ctx: &mut TxContext)       // → BET_LOCKED
-entry fun draw_seed(round: &mut Round, r: &Random, ctx: &mut TxContext)              // BET_LOCKED → SEEDED (separate tx)
+entry fun draw_seed(round: &mut Round, r: &Random, clock: &Clock, ctx: &mut TxContext) // BET_LOCKED → SEEDED (separate tx)
+public fun refund_unsubmitted(round: &mut Round, clock: &Clock, ctx: &mut TxContext)  // SEEDED → REFUNDED, now ≥ submit_deadline_ms
 public fun set_config_version(_: &AdminCap, game: &mut Game, version: String)
+public fun set_submit_window(_: &AdminCap, game: &mut Game, submit_window_ms: u64)
 ```
 Events:
 ```move
 RoundCreated { round: ID, round_id: u64, player: address, bet: u64, config_version: String }
-SeedDrawn    { round: ID, round_id: u64, seed: vector<u8> }
+SeedDrawn    { round: ID, round_id: u64, seed: vector<u8>, submit_deadline_ms: u64 }
+Refunded     { round: ID, round_id: u64, player: address, amount: u64 }
 ```
-Aborts: `EZeroBet` (0), `ESeedAlreadyDrawn` (1); transitions used by `verification`:
-`ENotSeeded` (2), `ENotSubmitted` (3), `ENotChallenged` (4).
+Aborts: `EZeroBet` (0), `ESeedAlreadyDrawn` (1), `ENotSeeded` (2), `ENotSubmitted` (3), `ENotChallenged` (4),
+`ESubmitWindowOpen` (5), `EZeroSubmitWindow` (6).
 
 ### 7.2 `verification` module
 Outcomes on-chain are `vector<u16>`, one per ball; `0xFFFF` = `-1` (never landed). These are the
