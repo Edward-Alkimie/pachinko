@@ -2,9 +2,11 @@
  * Verify page: anyone checks any round of the deployment from the chain alone. Enter a round
  * number; the page reads the round and its events, replays the seed in this browser, and shows
  * whether what was submitted and what was paid match that replay, plus the challenge history
- * (committee votes, verdict). "Watch it on the board" plays the round. Link: `#verify/<round>`.
+ * (committee votes, verdict). The round then plays on the board by itself, unless the board is busy
+ * with another round (e.g. an on-chain round on the Play view); "Watch again" plays it any time.
+ * Link: `#verify/<round>`.
  */
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ClientWithCoreApi } from '@mysten/sui/client'
 import { toHex } from '@mysten/sui/utils'
 import {
@@ -28,6 +30,8 @@ interface Props {
   readonly onRoundChange: (roundId: bigint) => void
   /** Plays a round on the board. */
   readonly onWatch: (seedHex: string, roundId: bigint) => void
+  /** The board is playing another round: don't take it over without a click. */
+  readonly boardBusy: boolean
 }
 
 const VERDICT_TEXT: Record<Verdict, string> = {
@@ -52,14 +56,23 @@ const sui = (mist: bigint | string) => `${Number(mist) / 1e9} SUI`
 const short = (hex: string) => `${hex.slice(0, 8)}…${hex.slice(-4)}`
 const hashOf = (bytes: number[]) => toHex(Uint8Array.from(bytes))
 
-export function VerifyPanel({ deployment, client, initialRound, onRoundChange, onWatch }: Props) {
+export function VerifyPanel({ deployment, client, initialRound, onRoundChange, onWatch, boardBusy }: Props) {
   const { state, verify } = useVerifyRound(deployment, client)
+  // The verified result the board was last given, so each result plays by itself only once.
+  const played = useRef<VerifiedRound | null>(null)
   const [input, setInput] = useState(initialRound?.toString() ?? '')
   const [inputError, setInputError] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialRound !== null) void verify(initialRound)
   }, [initialRound, verify])
+
+  useEffect(() => {
+    if (state.status !== 'done' || played.current === state.result || boardBusy) return
+    played.current = state.result
+    const { seedHex, round } = state.result
+    if (seedHex) onWatch(seedHex, round.roundId)
+  }, [state, boardBusy, onWatch])
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -182,7 +195,7 @@ function Report({ result, onWatch }: { result: VerifiedRound; onWatch: Props['on
       </dl>
       {seedHex && (
         <button type="button" onClick={() => onWatch(seedHex, round.roundId)}>
-          Watch it on the board
+          Watch again
         </button>
       )}
     </div>

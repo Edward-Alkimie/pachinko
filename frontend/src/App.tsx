@@ -102,6 +102,7 @@ function App() {
                 initialRound={route.round}
                 onRoundChange={(round) => showRoute({ view: 'verify', round })}
                 onWatch={playSeed}
+                boardBusy={status === 'simulating' || status === 'playing'}
               />
             ) : (
               <section className="verify-panel off">{!ONCHAIN.enabled && ONCHAIN.reason}</section>
