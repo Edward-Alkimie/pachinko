@@ -257,6 +257,7 @@ picks up where it stopped. Challenged rounds are left to the arbiter.
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
 | `nextAction` | src/operator/nextAction.ts | on-chain `RoundView` (+ deadline) → `drawSeed` / `submit` / `wait` / `finalize` / `drop` (pure) | ✅ |
 | `createOperator` → `tick` | src/operator/operator.ts | poll `RoundCreated` events, advance each round one tx at a time, retry failures after 30 s | ✅ |
+| `parseCheat` / `forgeOutcomes` | src/operator/cheat.ts | demo only: `OPERATOR_CHEAT=shortchange` → every ball reported as never landed; the operator submits them with a matching hash | ✅ |
 | operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap`, polls every 2 s (Flow G) | ✅ |
 
 ### `backend/` (Django)

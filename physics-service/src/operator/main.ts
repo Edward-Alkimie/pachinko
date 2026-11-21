@@ -1,7 +1,8 @@
 /**
  * Runs the operator for your deployment (PACHINKO_DEPLOYMENT in the repo-root .env).
  * Key: OPERATOR_PRIVATE_KEY (must own that deployment's OperatorCap), or SUI_PRIVATE_KEY when
- * unset. Usage: `npm run operator` (repo root). Stop with Ctrl+C.
+ * unset. Demo only: OPERATOR_CHEAT=shortchange forges every result (see ./cheat.ts).
+ * Usage: `npm run operator` (repo root). Stop with Ctrl+C.
  */
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +12,7 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { TESTNET_GRPC_URL, type Deployment } from '@pachinko/chain'
 import { deploymentName, loadDeployment } from '@pachinko/chain/node'
 import { DEFAULT_CONFIG, initPhysics } from '@pachinko/physics'
+import { parseCheat } from './cheat'
 import { createOperator } from './operator'
 
 const ENV_FILE = fileURLToPath(new URL('../../../.env', import.meta.url))
@@ -44,9 +46,11 @@ async function main() {
   await assertOwnsOperatorCap(client, deployment, address)
   await initPhysics()
 
+  const cheat = parseCheat(process.env.OPERATOR_CHEAT)
   const log = (line: string) => console.info(`${new Date().toISOString()}  ${line}`)
-  const operator = createOperator({ client, signer, deployment, config: DEFAULT_CONFIG, log })
+  const operator = createOperator({ client, signer, deployment, config: DEFAULT_CONFIG, cheat, log })
   log(`operator ${address} on deployment ${name} (${deployment.packageId}, ${DEFAULT_CONFIG.version})`)
+  if (cheat) log(`CHEATING (OPERATOR_CHEAT=${cheat}): every result is forged. Demo only.`)
 
   let running = true
   process.on('SIGINT', () => {

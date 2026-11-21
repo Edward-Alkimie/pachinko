@@ -83,6 +83,7 @@ The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 | `npm run replay -- <seed> [roundId]` | Re-run one round, print outcomes + hash |
 | `npm run deploy:testnet` | Publish your contracts + House → `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
 | `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes |
+| `npm run operator` with `OPERATOR_CHEAT=shortchange` in `.env` | Demo: the operator forges every result (player paid nothing), so a challenge can catch it |
 | `npm run bet:testnet` | Player side only: bet, then follow the round (needs the operator) |
 | `npm run round:testnet` | One full round from a script, playing both sides |
 | `npm run forged:testnet` | Same, but the operator forges a jackpot and a challenge catches it |

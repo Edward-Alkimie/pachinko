@@ -23,7 +23,8 @@ import {
   type Deployment,
   type RoundView,
 } from '@pachinko/chain'
-import { runRound, type MachineConfig } from '@pachinko/physics'
+import { hashRoundResult, runRound, type MachineConfig } from '@pachinko/physics'
+import { forgeOutcomes, type Cheat } from './cheat'
 import { nextAction } from './nextAction'
 
 /** Wait before retrying a round whose last step failed. */
@@ -34,6 +35,8 @@ export interface OperatorDeps {
   readonly signer: Signer
   readonly deployment: Deployment
   readonly config: MachineConfig
+  /** Demo only: submit a forged result instead of the physics result (`null` = honest). */
+  readonly cheat: Cheat | null
   readonly log: (line: string) => void
 }
 
@@ -42,7 +45,7 @@ export interface Operator {
   tick(): Promise<void>
 }
 
-export function createOperator({ client, signer, deployment, config, log }: OperatorDeps): Operator {
+export function createOperator({ client, signer, deployment, config, cheat, log }: OperatorDeps): Operator {
   /** Rounds still in progress: object id → earliest time to look at it again. */
   const rounds = new Map<string, number>()
   let cursor: string | null = null
@@ -68,6 +71,13 @@ export function createOperator({ client, signer, deployment, config, log }: Oper
     log(`round ${round.roundId} ${label.padEnd(8)} ${TESTNET_EXPLORER_TX}/${digest}`)
   }
 
+  /** A forged result for `cheat`, with the hash that matches it (so the on-chain check passes). */
+  function forged(seed: Uint8Array, roundId: bigint, cheat: Cheat) {
+    const honest = runRound(seed, roundId, config).outcomes
+    const outcomes = forgeOutcomes(cheat, honest)
+    return { outcomes, resultHash: hashRoundResult({ version: config.version, seed, roundId, outcomes }) }
+  }
+
   /** Reads the round and does its next step. */
   async function advance(objectId: string) {
     const round = await fetchRound(client, objectId)
@@ -82,8 +92,11 @@ export function createOperator({ client, signer, deployment, config, log }: Oper
         return run(round, 'seed', drawSeedTx(deployment, objectId))
       case 'submit': {
         if (!round.seed) throw new Error(`round ${round.roundId} is SEEDED but has no seed`)
-        const result = runRound(round.seed, round.roundId, config)
-        return run(round, 'submit', submitResultTx(deployment, objectId, result.outcomes, result.resultHash))
+        const { outcomes, resultHash } = cheat
+          ? forged(round.seed, round.roundId, cheat)
+          : runRound(round.seed, round.roundId, config)
+        const label = cheat ? `submit (forged: ${cheat})` : 'submit'
+        return run(round, label, submitResultTx(deployment, objectId, outcomes, resultHash))
       }
       case 'wait':
         rounds.set(objectId, action.untilMs)
