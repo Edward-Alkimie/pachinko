@@ -424,3 +424,23 @@ Deployment `kiana`, package `0x3a6d…0ebb` (committee + timeout), no verifiers 
 | Round 1, honest | operator + `bet:testnet`: hashes matched (`e137840f…258b`), finalized after the window | seed `5NiQ3jGd…`, submit `CPWwobY8…`, finalize `2fVUt6Mg…` |
 | Round 2, refund | no operator: bet + seed, waited out the 2-minute submit window, `refund_unsubmitted` → status 5, 0.01 SUI back to the player | bet `A7Xs3ocF…`, seed `HZXSzxh2…`, refund `6V7o6VrG…` |
 | Round 3, admin fallback | operator shortchanged, `bet:testnet` challenged (`4XwWqqiZ…`); no committee could be drawn, so 63 s later (vote window + 3 s margin) the arbiter resolved it (`B2Z3hHcy…`): operator forged, `by_committee = false`, both bonds (0.02 SUI) to the challenger, player paid from the true outcomes | seed `8krfNUxG…`, submit `FiwEKdnP…` |
+
+### Testnet run: committee settles a forged round (2026-11-21)
+
+Deployment `kiana` (`0x3a6d…0ebb`), 3 verifiers registered with `npm run verifiers:setup`, `npm run operator` with
+`OPERATOR_CHEAT=shortchange`, `npm run verifier`, and `npm run bet:testnet` as the player.
+
+| Step (round 4) | Who | Digest |
+|---|---|---|
+| bet | player | `BULwoXLB7Kw1CdzCG6ZfZqAe3jWN4Pm5157vUUfXM5My` |
+| draw seed | operator | `3MZN9srroF1GvVV4MHRYMHHKZvzuLtpEuoyaybQWQJzZ` |
+| submit, forged (every ball "never landed") | operator | `75kuWRsxvcc55J4tdVAUiT29W9JqqVCYM4Tasvk69etS` |
+| challenge (replay `80e450ec…` ≠ submitted `f67ac0f2…`) | player | `9tEvPt2i4cRg8gAtZnmenzijLWQFaLQRypbkBazWqoPx` |
+| select committee (`sui::random`) | verifier `0x941b…2071` | `6Aw1AzzSTUBs88Ujm1uhVGa3vki2sFuBD9wUto8KXZhS` |
+| vote | verifier `0x941b…2071` | `GY8ZCRMfCpdKu99k2JNEwyEkoPNuZHhpsQzps9XFvZkz` |
+| vote (2nd matching: settles) | verifier `0x312d…555d` | `aRtrKWQ6NV867ujKBZKfTw2EstbCW3iBEwoVqtBheXk` |
+
+- **Verdict:** operator forged, `by_committee = true`, 4 s after the challenge. The challenger got 0.015 SUI (own
+  bond + half the operator's), the two voters split the other 0.005, and the player was paid from the true outcomes.
+- **Third verifier** (`0xc87c…3a12`): its vote arrived after the round was settled and aborted (`ENoDispute`); it is
+  freed without reward or slash, as designed. The node now stops voting once a vote settles the round.

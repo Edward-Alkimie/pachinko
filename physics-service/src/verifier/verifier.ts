@@ -13,6 +13,7 @@ import {
   Challenged,
   RoundStatus,
   TESTNET_EXPLORER_TX,
+  eventType,
   fetchDispute,
   fetchRound,
   selectCommitteeTx,
@@ -38,10 +39,12 @@ export function createVerifier({ client, signers, deployment, config, log }: Ver
   /** Challenged rounds still open for this node: object id → earliest time to look again. */
   const rounds = new Map<string, number>()
   const feed = createRoundFeed(client, deployment.packageId, 'Challenged', Challenged)
+  const resolvedType = eventType(deployment.packageId, 'Resolved')
 
   async function run(round: RoundView, signer: Signer, label: string, tx: Transaction) {
-    const { digest } = await signAndExecute(client, signer, tx)
-    log(`round ${round.roundId} ${label.padEnd(8)} ${short(signer.toSuiAddress())}  ${TESTNET_EXPLORER_TX}/${digest}`)
+    const executed = await signAndExecute(client, signer, tx)
+    log(`round ${round.roundId} ${label.padEnd(8)} ${short(signer.toSuiAddress())}  ${TESTNET_EXPLORER_TX}/${executed.digest}`)
+    return executed
   }
 
   /** Reads the round and does the next step for each key. Returns true when no key has anything left. */
@@ -62,7 +65,11 @@ export function createVerifier({ client, signers, deployment, config, log }: Ver
     if (voters.length > 0) {
       if (!round.seed) throw new Error(`round ${round.roundId} is CHALLENGED but has no seed`)
       const { outcomes } = runRound(round.seed, round.roundId, config)
-      for (const { signer } of voters) await run(round, signer, 'vote', voteTx(deployment, objectId, outcomes))
+      for (const { signer } of voters) {
+        const executed = await run(round, signer, 'vote', voteTx(deployment, objectId, outcomes))
+        // The vote that reached the quorum settled the round: the remaining keys have nothing to vote on.
+        if (executed.events.some((e) => e.eventType === resolvedType)) return true
+      }
     }
     return voters.length === 0
   }
