@@ -10,7 +10,8 @@
  * need an account yet; rounds will be tied to the signed-in user later.
  *
  * OnchainPanel plays a round on Sui testnet: the wallet bets, and once the seed is
- * on-chain it is played here with useRound.start. The Replay form re-runs any seed
+ * on-chain it is played here with useRound.start, whose result hash the panel compares with
+ * the submitted one (and offers a challenge on a mismatch). The Replay form re-runs any seed
  * (e.g. an on-chain round's) the same way, so anyone can check a result.
  */
 import { useCallback } from 'react'
@@ -33,6 +34,12 @@ function App() {
   const { result, tick, status } = state
   const isBusy = status === 'simulating'
   const playSeed = useCallback((seedHex: string, roundId: bigint) => void start(seedHex, roundId), [start])
+  // On-chain rounds also need the replay's hash, to compare with the submitted result. It arrives
+  // when playback ends, so the match / mismatch never shows before the balls have landed.
+  const playOnchainSeed = useCallback(
+    async (seedHex: string, roundId: bigint) => (await start(seedHex, roundId))?.resultHash ?? null,
+    [start],
+  )
 
   const frameIndex = result ? frameIndexAt(tick, RECORD_EVERY, result.frames.length) : -1
   const balls = result && frameIndex >= 0 ? result.frames[frameIndex].balls : []
@@ -54,7 +61,7 @@ function App() {
 
         <aside className="side">
           <AuthPanel state={authState} {...authActions} />
-          <OnchainPanel onSeed={playSeed} />
+          <OnchainPanel onSeed={playOnchainSeed} />
           <ResultPanel
             config={CONFIG}
             status={status}

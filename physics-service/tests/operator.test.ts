@@ -1,6 +1,6 @@
 import { RoundStatus, type RoundView } from '@pachinko/chain'
 import { describe, expect, it } from 'vitest'
-import { CLOCK_MARGIN_MS, nextAction } from '../src/operator/nextAction'
+import { CLOCK_MARGIN_MS, arbiterAction, nextAction } from '../src/operator/nextAction'
 
 const VERSION = 'pachinko-v0.1.0'
 
@@ -44,5 +44,19 @@ describe('operator nextAction', () => {
   it('drops challenged and finalized rounds', () => {
     expect(nextAction(round(RoundStatus.Challenged), null, 0, VERSION).kind).toBe('drop')
     expect(nextAction(round(RoundStatus.Finalized), null, 0, VERSION).kind).toBe('drop')
+  })
+})
+
+describe('arbiter arbiterAction', () => {
+  it('resolves a challenged round that uses its physics version', () => {
+    expect(arbiterAction(round(RoundStatus.Challenged), VERSION)).toEqual({ kind: 'resolve' })
+  })
+
+  it('leaves a challenged round of another physics version alone', () => {
+    expect(arbiterAction(round(RoundStatus.Challenged, 'pachinko-v9'), VERSION).kind).toBe('drop')
+  })
+
+  it('drops a round that is no longer challenged', () => {
+    expect(arbiterAction(round(RoundStatus.Finalized), VERSION).kind).toBe('drop')
   })
 })

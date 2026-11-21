@@ -1,5 +1,5 @@
 /**
- * What the operator should do next for a round, decided from on-chain state only. Because the
+ * What the operator (and the arbiter) should do next for a round, decided from on-chain state only. Because the
  * decision reads the chain each time, the operator can restart at any point and pick up where it was.
  *
  *   BET_LOCKED → draw the seed · SEEDED → run physics and submit · SUBMITTED → finalize once the
@@ -45,4 +45,20 @@ export function nextAction(
     case RoundStatus.Finalized:
       return { kind: 'drop', reason: 'finalized' }
   }
+}
+
+export type ArbiterAction =
+  | { readonly kind: 'resolve' }
+  /** Nothing for the arbiter to do with this round. */
+  | { readonly kind: 'drop'; readonly reason: string }
+
+/**
+ * Arbiter (holds the AdminCap): a CHALLENGED round is settled by re-running its physics and
+ * passing the true outcomes to `resolve_by_admin`; the contract compares hashes and picks the winner.
+ */
+export function arbiterAction(round: RoundView, configVersion: string): ArbiterAction {
+  if (round.status !== RoundStatus.Challenged) return { kind: 'drop', reason: 'not challenged (already resolved)' }
+  return round.configVersion === configVersion
+    ? { kind: 'resolve' }
+    : { kind: 'drop', reason: `needs physics ${round.configVersion}, this arbiter runs ${configVersion}` }
 }

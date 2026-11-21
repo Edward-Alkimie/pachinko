@@ -69,21 +69,33 @@ export function eventType(packageId: string, name: EventName): string {
 }
 
 /**
- * The `Finalized` event of one round (its payout), or `null` while the round isn't final.
- * Scans the package's `Finalized` events oldest-first: descending scans run into the node's
+ * The first event of type `name` about one round, or `null` if there is none yet.
+ * Scans the package's events of that type oldest-first: descending scans run into the node's
  * pruned history. Fine for testnet volumes; an indexer would replace this later.
  */
-export async function findFinalized(
+async function findRoundEvent<T extends { round: string }>(
   client: ClientWithCoreApi,
   packageId: string,
+  name: EventName,
+  layout: { parse(bytes: Uint8Array): T },
   roundObjectId: string,
-): Promise<typeof Finalized.$inferType | null> {
+): Promise<T | null> {
   let after: string | null = null
   for (;;) {
-    const page = await client.core.listEvents({ filter: { eventType: eventType(packageId, 'Finalized') }, after })
-    const match = page.events.map((e) => Finalized.parse(e.bcs)).find((f) => f.round === roundObjectId)
+    const page = await client.core.listEvents({ filter: { eventType: eventType(packageId, name) }, after })
+    const match = page.events.map((e) => layout.parse(e.bcs)).find((event) => event.round === roundObjectId)
     if (match) return match
     if (!page.hasNextPage) return null
     after = page.endCursor
   }
+}
+
+/** The round's `Finalized` event (its payout), or `null` while the round isn't final. */
+export function findFinalized(client: ClientWithCoreApi, packageId: string, roundObjectId: string) {
+  return findRoundEvent(client, packageId, 'Finalized', Finalized, roundObjectId)
+}
+
+/** The round's `Resolved` event (verdict, bond award), or `null` if it was never challenged and settled. */
+export function findResolved(client: ClientWithCoreApi, packageId: string, roundObjectId: string) {
+  return findRoundEvent(client, packageId, 'Resolved', Resolved, roundObjectId)
 }

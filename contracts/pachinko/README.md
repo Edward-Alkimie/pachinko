@@ -31,12 +31,11 @@ The deploying key holds that deployment's caps, so:
 
 - **Operator:** `npm run operator` must sign with the key that owns the `OperatorCap`. Set
   `OPERATOR_PRIVATE_KEY` in `.env` if that is not `SUI_PRIVATE_KEY`.
-- **Scripts:** `round:testnet` and `forged:testnet` act as player, operator and admin, so they
-  run with the deploying key.
-- **Challenger:** `forged:testnet` can use a second address as the challenger, so the bond
-  shows up as a real transfer. Create one (`sui client new-address ed25519`), fund and export it
-  as in the root setup, then set `CHALLENGER_PRIVATE_KEY` in `.env`. Without it, the main key
-  also challenges.
+- **Arbiter:** if that key also owns the `AdminCap` (normal: the deploying key), the same process
+  settles challenged rounds with `resolve_by_admin`. Otherwise it logs `arbiter off`.
+- **Challenge demo:** run the operator with `OPERATOR_CHEAT=shortchange`, then play from the page
+  (or `bet:testnet`) and challenge the mismatch. A browser wallet is a second address, so the bond
+  transfer shows up as a real transfer.
 
 Optional settings (bet, bonds, house funds, window, multipliers) are listed in `.env.example`.
 

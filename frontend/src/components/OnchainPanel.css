@@ -11,3 +11,17 @@
 .onchain-panel .error { margin: 0; color: #e06c75; font-size: 0.85rem; }
 .onchain-panel a { color: #88c0d0; }
 .onchain-panel strong { color: #e5c07b; }
+.onchain-panel .check { margin: 0; font-size: 0.85rem; }
+.onchain-panel .check.unavailable { color: #8a94a6; }
+.onchain-panel .check.match { color: #98c379; }
+.onchain-panel .check.mismatch { color: #e06c75; font-weight: 600; }
+.onchain-panel button.challenge { background: #e06c75; border-color: #e06c75; color: #0b0f17; font-weight: 600; }
+.onchain-panel button.challenge:hover:not(:disabled) { background: #f08a92; border-color: #f08a92; }
+.onchain-panel .settlement { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.onchain-panel .settlement th { text-align: left; font-weight: normal; color: #8a94a6; padding: 2px 0; }
+.onchain-panel .settlement td { text-align: right; padding: 2px 0; }
+.onchain-panel .settlement .net th, .onchain-panel .settlement .net td { border-top: 1px solid #2c3850; padding-top: 6px; font-weight: 600; color: #e6e9ef; }
+.onchain-panel .settlement .net.gain td { color: #98c379; }
+.onchain-panel .settlement .net.loss td { color: #e06c75; }
+.onchain-panel button.challenge.secondary { background: none; border-color: #2c3850; color: #e6e9ef; font-weight: normal; }
+.onchain-panel button.challenge.secondary:hover:not(:disabled) { background: #2c3850; border-color: #2c3850; }

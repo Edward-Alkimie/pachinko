@@ -14,7 +14,6 @@ import {
   RoundStatus,
   TESTNET_EXPLORER_TX,
   drawSeedTx,
-  eventType,
   fetchRound,
   fetchSubmission,
   finalizeTx,
@@ -23,17 +22,21 @@ import {
   type Deployment,
   type RoundView,
 } from '@pachinko/chain'
-import { runRound, type MachineConfig } from '@pachinko/physics'
+import { hashRoundResult, runRound, type MachineConfig } from '@pachinko/physics'
+import { forgeOutcomes, type Cheat } from './cheat'
 import { nextAction } from './nextAction'
+import { createRoundFeed } from './roundFeed'
 
 /** Wait before retrying a round whose last step failed. */
-const RETRY_AFTER_MS = 30_000
+export const RETRY_AFTER_MS = 30_000
 
 export interface OperatorDeps {
   readonly client: ClientWithCoreApi
   readonly signer: Signer
   readonly deployment: Deployment
   readonly config: MachineConfig
+  /** Demo only: submit a forged result instead of the physics result (`null` = honest). */
+  readonly cheat: Cheat | null
   readonly log: (line: string) => void
 }
 
@@ -42,30 +45,21 @@ export interface Operator {
   tick(): Promise<void>
 }
 
-export function createOperator({ client, signer, deployment, config, log }: OperatorDeps): Operator {
+export function createOperator({ client, signer, deployment, config, cheat, log }: OperatorDeps): Operator {
   /** Rounds still in progress: object id → earliest time to look at it again. */
   const rounds = new Map<string, number>()
-  let cursor: string | null = null
-
-  async function discoverRounds() {
-    let hasNextPage = true
-    while (hasNextPage) {
-      const page = await client.core.listEvents({
-        filter: { eventType: eventType(deployment.packageId, 'RoundCreated') },
-        after: cursor,
-      })
-      for (const event of page.events) {
-        const created = RoundCreated.parse(event.bcs)
-        if (!rounds.has(created.round)) rounds.set(created.round, 0)
-      }
-      cursor = page.endCursor ?? cursor
-      hasNextPage = page.hasNextPage
-    }
-  }
+  const feed = createRoundFeed(client, deployment.packageId, 'RoundCreated', RoundCreated)
 
   async function run(round: RoundView, label: string, tx: Transaction) {
     const { digest } = await signAndExecute(client, signer, tx)
     log(`round ${round.roundId} ${label.padEnd(8)} ${TESTNET_EXPLORER_TX}/${digest}`)
+  }
+
+  /** A forged result for `cheat`, with the hash that matches it (so the on-chain check passes). */
+  function forged(seed: Uint8Array, roundId: bigint, cheat: Cheat) {
+    const honest = runRound(seed, roundId, config).outcomes
+    const outcomes = forgeOutcomes(cheat, honest)
+    return { outcomes, resultHash: hashRoundResult({ version: config.version, seed, roundId, outcomes }) }
   }
 
   /** Reads the round and does its next step. */
@@ -82,8 +76,11 @@ export function createOperator({ client, signer, deployment, config, log }: Oper
         return run(round, 'seed', drawSeedTx(deployment, objectId))
       case 'submit': {
         if (!round.seed) throw new Error(`round ${round.roundId} is SEEDED but has no seed`)
-        const result = runRound(round.seed, round.roundId, config)
-        return run(round, 'submit', submitResultTx(deployment, objectId, result.outcomes, result.resultHash))
+        const { outcomes, resultHash } = cheat
+          ? forged(round.seed, round.roundId, cheat)
+          : runRound(round.seed, round.roundId, config)
+        const label = cheat ? `submit (forged: ${cheat})` : 'submit'
+        return run(round, label, submitResultTx(deployment, objectId, outcomes, resultHash))
       }
       case 'wait':
         rounds.set(objectId, action.untilMs)
@@ -98,7 +95,7 @@ export function createOperator({ client, signer, deployment, config, log }: Oper
 
   return {
     async tick() {
-      await discoverRounds()
+      for (const objectId of await feed.next()) if (!rounds.has(objectId)) rounds.set(objectId, 0)
       for (const [objectId, dueAt] of rounds) {
         if (Date.now() < dueAt) continue
         try {
