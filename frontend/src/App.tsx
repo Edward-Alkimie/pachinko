@@ -34,7 +34,8 @@ function App() {
   const { result, tick, status } = state
   const isBusy = status === 'simulating'
   const playSeed = useCallback((seedHex: string, roundId: bigint) => void start(seedHex, roundId), [start])
-  // On-chain rounds also need the replay's hash, to compare with the submitted result.
+  // On-chain rounds also need the replay's hash, to compare with the submitted result. It arrives
+  // when playback ends, so the match / mismatch never shows before the balls have landed.
   const playOnchainSeed = useCallback(
     async (seedHex: string, roundId: bigint) => (await start(seedHex, roundId))?.resultHash ?? null,
     [start],

@@ -5,7 +5,7 @@ import * as chain from '@pachinko/chain'
 import { RoundCreated, RoundStatus, eventType, type Deployment, type RoundView } from '@pachinko/chain'
 import { DEFAULT_CONFIG } from '@pachinko/physics'
 import type { AppDAppKit } from '../onchain/dappKit'
-import { BET_MIST, phaseFor, replayCheck, useOnchainRound } from './useOnchainRound'
+import { BET_MIST, phaseFor, replayCheck, stageOf, useOnchainRound } from './useOnchainRound'
 
 vi.mock('@pachinko/chain', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@pachinko/chain')>()),
@@ -106,6 +106,7 @@ describe('useOnchainRound', () => {
       roundId: 5n,
       createDigest: 'BET',
       deadlineMs: sub.deadlineMs,
+      replay: 'done',
       replayHash: HONEST_HASH,
       submittedHash: HONEST_HASH,
       payoutMist: 12_000_000n,
@@ -171,6 +172,65 @@ describe('useOnchainRound', () => {
     })
   })
 
+  it('holds the chain result back until the board has finished playing', async () => {
+    vi.mocked(chain.fetchRound).mockResolvedValue(view(RoundStatus.Submitted))
+    vi.mocked(chain.fetchSubmission).mockResolvedValue(submission(FORGED_HASH))
+    let finishPlayback: (hash: string) => void = () => {}
+    const onSeed = () => new Promise<string | null>((resolve) => (finishPlayback = resolve))
+
+    const { result } = renderHook(() => useOnchainRound(DEPLOYMENT, fakeDAppKit(), onSeed))
+    await act(async () => {
+      void result.current.play()
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+    // The chain is already at SUBMITTED, but the balls are still falling.
+    expect(result.current.state.phase).toBe('verifying')
+    expect(stageOf(result.current.state)).toBe('playing')
+    expect(replayCheck(result.current.state)).toBeNull()
+
+    await act(async () => finishPlayback(HONEST_HASH))
+    expect(stageOf(result.current.state)).toBe('verifying')
+    expect(replayCheck(result.current.state)).toBe('mismatch')
+  })
+
+  it('marks an interrupted replay and can play the round again', async () => {
+    vi.mocked(chain.fetchRound).mockResolvedValue(view(RoundStatus.Submitted))
+    vi.mocked(chain.fetchSubmission).mockResolvedValue(submission(HONEST_HASH))
+    const onSeed = vi.fn<(seedHex: string, roundId: bigint) => Promise<string | null>>()
+    onSeed.mockResolvedValueOnce(null).mockResolvedValueOnce(HONEST_HASH)
+
+    const { result } = renderHook(() => useOnchainRound(DEPLOYMENT, fakeDAppKit(), onSeed))
+    await act(async () => {
+      void result.current.play()
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+    expect(result.current.state.replay).toBe('interrupted')
+    expect(replayCheck(result.current.state)).toBe('unavailable')
+
+    await act(async () => result.current.replayAgain())
+    expect(onSeed).toHaveBeenLastCalledWith('07'.repeat(32), 5n)
+    expect(replayCheck(result.current.state)).toBe('match')
+  })
+
+  it('keeps following through a failed read and waits for the Finalized event to be indexed', async () => {
+    vi.mocked(chain.fetchRound)
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValue(view(RoundStatus.Finalized))
+    vi.mocked(chain.findFinalized)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ payout: '0' } as Awaited<ReturnType<typeof chain.findFinalized>>)
+    vi.mocked(chain.findResolved).mockResolvedValue(null)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const { result } = renderHook(() => useOnchainRound(DEPLOYMENT, fakeDAppKit(), async () => HONEST_HASH))
+    await act(async () => {
+      void result.current.play()
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+
+    expect(result.current.state).toMatchObject({ phase: 'final', payoutMist: 0n, error: null })
+  })
+
   it('shows the error when the wallet rejects the bet', async () => {
     const dAppKit = fakeDAppKit()
     vi.mocked(dAppKit.signAndExecuteTransaction).mockReset().mockRejectedValue(new Error('User rejected'))
@@ -184,18 +244,27 @@ describe('useOnchainRound', () => {
 })
 
 describe('replayCheck', () => {
-  it('waits for the submission, then for the replay, then compares', () => {
-    expect(replayCheck({ replayHash: HONEST_HASH, submittedHash: null })).toBeNull()
-    expect(replayCheck({ replayHash: null, submittedHash: HONEST_HASH })).toBe('pending')
-    expect(replayCheck({ replayHash: HONEST_HASH, submittedHash: HONEST_HASH })).toBe('match')
-    expect(replayCheck({ replayHash: HONEST_HASH, submittedHash: FORGED_HASH })).toBe('mismatch')
+  it('compares only once the result is submitted and the replay has played to the end', () => {
+    expect(replayCheck({ replay: 'done', replayHash: HONEST_HASH, submittedHash: null })).toBeNull()
+    expect(replayCheck({ replay: 'playing', replayHash: null, submittedHash: HONEST_HASH })).toBeNull()
+    expect(replayCheck({ replay: 'done', replayHash: HONEST_HASH, submittedHash: HONEST_HASH })).toBe('match')
+    expect(replayCheck({ replay: 'done', replayHash: HONEST_HASH, submittedHash: FORGED_HASH })).toBe('mismatch')
+    expect(replayCheck({ replay: 'interrupted', replayHash: null, submittedHash: HONEST_HASH })).toBe('unavailable')
+  })
+})
+
+describe('stageOf', () => {
+  it('shows "playing" over any chain phase while the board animates, except an error', () => {
+    expect(stageOf({ phase: 'verifying', replay: 'playing' })).toBe('playing')
+    expect(stageOf({ phase: 'verifying', replay: 'done' })).toBe('verifying')
+    expect(stageOf({ phase: 'error', replay: 'playing' })).toBe('error')
   })
 })
 
 describe('phaseFor', () => {
   it('maps every on-chain status to a page phase', () => {
     expect(phaseFor(RoundStatus.BetLocked)).toBe('waitingSeed')
-    expect(phaseFor(RoundStatus.Seeded)).toBe('waitingSeed')
+    expect(phaseFor(RoundStatus.Seeded)).toBe('waitingResult')
     expect(phaseFor(RoundStatus.Submitted)).toBe('verifying')
     expect(phaseFor(RoundStatus.Challenged)).toBe('challenged')
     expect(phaseFor(RoundStatus.Finalized)).toBe('final')

@@ -6,6 +6,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CONFIG } from '@pachinko/physics'
+import type { RoundResult } from '@pachinko/physics'
 import { useRound } from './useRound'
 
 const GOLDEN_SEED = '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'
@@ -54,6 +55,30 @@ describe('useRound', () => {
     expect(state.tick).toBe(state.result?.endTick)
     expect(state.seedHex).toBe(GOLDEN_SEED)
     expect(state.roundId).toBe(1n)
+  }, 60_000)
+
+  it('resolves start() only once playback has ended', async () => {
+    const { result } = renderHook(() => useRound(DEFAULT_CONFIG))
+    let resolved: RoundResult | null = null
+    await act(async () => {
+      resolved = await result.current.start(GOLDEN_SEED, 1n)
+    })
+    expect(resolved).not.toBeNull()
+    expect(resolved!.resultHash).toBe(GOLDEN_HASH)
+    expect(result.current.state.status).toBe('done')
+  }, 60_000)
+
+  it('resolves a replaced round with null', async () => {
+    const { result, unmount } = renderHook(() => useRound(DEFAULT_CONFIG))
+    let first: unknown = 'pending'
+    act(() => {
+      void result.current.start(GOLDEN_SEED, 1n).then((r) => (first = r))
+    })
+    await waitFor(() => expect(result.current.state.status).toBe('playing'), { timeout: 30_000, interval: 5 })
+
+    act(() => void result.current.start(GOLDEN_SEED, 2n))
+    await waitFor(() => expect(first).toBeNull())
+    unmount()
   }, 60_000)
 
   it('shows an error instead of crashing on a bad seed', async () => {

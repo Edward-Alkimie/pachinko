@@ -1,7 +1,8 @@
 /**
  * useRound: runs one round and plays it back in real time.
  *
- * Flow:  start(seed, roundId)   (resolves with the RoundResult, or null if it failed or was replaced)
+ * Flow:  start(seed, roundId)   (resolves with the RoundResult once playback ends, or null if it
+ *                                 failed or was replaced, so callers never reveal the result early)
  *          → status 'simulating' (UI shows "Simulating…")
  *          → runRound() computes the whole round up front (~1 s)
  *          → status 'playing': a requestAnimationFrame loop advances `tick`
@@ -58,9 +59,14 @@ export function useRound(config: MachineConfig = DEFAULT_CONFIG) {
   // sees a different number and quietly gives up instead of overwriting.
   const runId = useRef(0)
 
+  // Resolves the running start() when its playback is cut short (null) or ends (the result).
+  const finishPlayback = useRef<((result: RoundResult | null) => void) | null>(null)
+
   const stopAnimation = useCallback(() => {
     if (frameRequest.current !== null) cancelAnimationFrame(frameRequest.current)
     frameRequest.current = null
+    finishPlayback.current?.(null)
+    finishPlayback.current = null
   }, [])
 
   // Stop the animation loop if the component using this hook goes away.
@@ -89,14 +95,22 @@ export function useRound(config: MachineConfig = DEFAULT_CONFIG) {
       // Playback: map wall-clock time since start to a simulation tick.
       const startedAt = performance.now()
       setState((s) => ({ ...s, status: 'playing', result, tick: 0 }))
-      const step = (now: number) => {
-        const tick = Math.min(tickAt(now - startedAt, config.timing.tickHz), result.endTick)
-        const finished = tick >= result.endTick
-        setState((s) => ({ ...s, tick, status: finished ? 'done' : 'playing' }))
-        frameRequest.current = finished ? null : requestAnimationFrame(step)
-      }
-      frameRequest.current = requestAnimationFrame(step)
-      return result
+      return new Promise<RoundResult | null>((resolve) => {
+        finishPlayback.current = resolve
+        const step = (now: number) => {
+          const tick = Math.min(tickAt(now - startedAt, config.timing.tickHz), result.endTick)
+          const finished = tick >= result.endTick
+          setState((s) => ({ ...s, tick, status: finished ? 'done' : 'playing' }))
+          if (!finished) {
+            frameRequest.current = requestAnimationFrame(step)
+            return
+          }
+          frameRequest.current = null
+          finishPlayback.current = null
+          resolve(result)
+        }
+        frameRequest.current = requestAnimationFrame(step)
+      })
     },
     [config, stopAnimation],
   )

@@ -1,13 +1,22 @@
 /**
  * On-chain play: connect a Sui wallet, bet with one signature, and follow the round on testnet.
  * The operator (physics-service) draws the seed, submits and finalizes; once the seed is on-chain,
- * `onSeed` plays it with the normal board animation. When the result is submitted, the panel
- * compares it with the page's own replay; on a mismatch the player can challenge inside the window,
- * and the verdict is shown once the arbiter settles it. Off unless a deployment is configured.
+ * `onSeed` plays it with the normal board animation. Nothing from the chain is shown while the balls
+ * are still falling (`stageOf`). After that the panel compares the submitted result with the page's
+ * own replay, and the player may challenge while the window is open (anyone may; on a match the
+ * warning says the bond would be lost). The verdict and the wallet's net show once the round is final.
+ * Off unless a deployment is configured.
  */
 import { useCurrentAccount } from '@mysten/dapp-kit-react'
 import { TESTNET_EXPLORER_OBJECT, TESTNET_EXPLORER_TX, type Deployment } from '@pachinko/chain'
-import { BET_MIST, replayCheck, useOnchainRound, type OnchainPhase, type ReplayCheck } from '../hooks/useOnchainRound'
+import {
+  BET_MIST,
+  replayCheck,
+  stageOf,
+  useOnchainRound,
+  type OnchainStage,
+  type ReplayCheck,
+} from '../hooks/useOnchainRound'
 import { ONCHAIN } from '../onchain/deployment'
 import { settlement } from '../onchain/settlement'
 import { getDAppKit } from '../onchain/dappKit'
@@ -19,22 +28,24 @@ interface Props {
   readonly onSeed: (seedHex: string, roundId: bigint) => Promise<string | null>
 }
 
-const PHASE_TEXT: Record<OnchainPhase, string> = {
+const STAGE_TEXT: Record<OnchainStage, string> = {
   idle: 'Bet and play a round on Sui testnet.',
   signing: 'Confirm the bet in your wallet…',
   waitingSeed: 'Bet locked. Waiting for the on-chain seed…',
-  verifying: 'Result submitted. Challenge window open…',
+  playing: 'Seed drawn on-chain. Playing your round…',
+  waitingResult: "Waiting for the operator's result…",
+  verifying: 'Result submitted. Challenge window open.',
   challenged: 'Result challenged. Waiting for the arbiter…',
   final: 'Round final. What it did to your wallet:',
   error: 'Something went wrong.',
 }
 
-const BUSY: readonly OnchainPhase[] = ['signing', 'waitingSeed', 'verifying', 'challenged']
+const IDLE: readonly OnchainStage[] = ['idle', 'final', 'error']
 
 const CHECK_TEXT: Record<Exclude<ReplayCheck, null>, string> = {
-  pending: 'Checking your replay against the submitted result…',
   match: '✓ Your replay matches the submitted result.',
   mismatch: '✗ Your replay does not match the submitted result.',
+  unavailable: 'Your replay was interrupted by another seed, so it was not checked.',
 }
 
 function sui(mist: bigint): string {
@@ -57,13 +68,16 @@ export function OnchainPanel({ onSeed }: Props) {
 function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; deployment: Deployment }) {
   const dAppKit = getDAppKit()
   const account = useCurrentAccount({ dAppKit })
-  const { state, play, challenge } = useOnchainRound(deployment, dAppKit, onSeed)
-  const busy = BUSY.includes(state.phase)
-  const check = replayCheck(state)
+  const { state, play, challenge, replayAgain } = useOnchainRound(deployment, dAppKit, onSeed)
+  const stage = stageOf(state)
+  const busy = !IDLE.includes(stage)
+  // Chain results stay hidden while the board is playing (stage 'playing').
+  const check = stage === 'playing' ? null : replayCheck(state)
   const bondMist = BigInt(deployment.house.challengerBondMist)
   const windowOpen = state.deadlineMs !== null && Date.now() < state.deadlineMs
-  const canChallenge = check === 'mismatch' && state.phase === 'verifying' && !state.challengeDigest
-  const result = settlement(state, account?.address ?? null, BET_MIST, bondMist)
+  // Anyone may challenge while the window is open; the check only tells the player how risky it is.
+  const showChallenge = stage === 'verifying' && !state.challengeDigest
+  const result = stage === 'final' ? settlement(state, account?.address ?? null, BET_MIST, bondMist) : null
 
   return (
     <section className="onchain-panel" aria-label="On-chain play">
@@ -73,12 +87,13 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
         Play on-chain ({sui(BET_MIST)})
       </button>
       <p className="status" aria-live="polite">
-        {state.error ?? PHASE_TEXT[state.phase]}
+        {state.error ?? STAGE_TEXT[stage]}
       </p>
       {check && <p className={`check ${check}`}>{CHECK_TEXT[check]}</p>}
-      {canChallenge && (
+      {check === 'unavailable' && <button onClick={replayAgain}>Replay this round to check it</button>}
+      {showChallenge && (
         <button
-          className="challenge"
+          className={check === 'mismatch' ? 'challenge' : 'challenge secondary'}
           onClick={() => void challenge()}
           disabled={!account || state.challenging || !windowOpen}
         >
@@ -88,6 +103,9 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
               ? `Challenge (${sui(bondMist)} bond)`
               : 'Challenge window closed'}
         </button>
+      )}
+      {showChallenge && check === 'match' && windowOpen && (
+        <p className="hint">Anyone can challenge, but the result matches your replay: a challenge would lose the bond.</p>
       )}
       {state.challengeError && <p className="error">{state.challengeError}</p>}
       {state.roundObjectId && (
@@ -108,7 +126,7 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
               </dd>
             </>
           )}
-          {state.deadlineMs !== null && state.phase === 'verifying' && (
+          {state.deadlineMs !== null && stage === 'verifying' && (
             <>
               <dt>Window ends</dt>
               <dd>{new Date(state.deadlineMs).toLocaleTimeString()}</dd>
@@ -124,7 +142,7 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
               </dd>
             </>
           )}
-          {state.resolution && (
+          {state.resolution && stage === 'final' && (
             <>
               <dt>Verdict</dt>
               <dd>
