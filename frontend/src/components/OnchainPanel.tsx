@@ -9,6 +9,7 @@ import { useCurrentAccount } from '@mysten/dapp-kit-react'
 import { TESTNET_EXPLORER_OBJECT, TESTNET_EXPLORER_TX, type Deployment } from '@pachinko/chain'
 import { BET_MIST, replayCheck, useOnchainRound, type OnchainPhase, type ReplayCheck } from '../hooks/useOnchainRound'
 import { ONCHAIN } from '../onchain/deployment'
+import { settlement } from '../onchain/settlement'
 import { getDAppKit } from '../onchain/dappKit'
 import { WalletPanel } from './WalletPanel'
 import './OnchainPanel.css'
@@ -24,7 +25,7 @@ const PHASE_TEXT: Record<OnchainPhase, string> = {
   waitingSeed: 'Bet locked. Waiting for the on-chain seed…',
   verifying: 'Result submitted. Challenge window open…',
   challenged: 'Result challenged. Waiting for the arbiter…',
-  final: 'Round final. Paid out.',
+  final: 'Round final. What it did to your wallet:',
   error: 'Something went wrong.',
 }
 
@@ -38,6 +39,12 @@ const CHECK_TEXT: Record<Exclude<ReplayCheck, null>, string> = {
 
 function sui(mist: bigint): string {
   return `${Number(mist) / 1e9} SUI`
+}
+
+/** `+0.01 SUI` / `−0.01 SUI` (a zero shows as `0 SUI`). */
+function signedSui(mist: bigint): string {
+  if (mist === 0n) return sui(0n)
+  return mist > 0n ? `+${sui(mist)}` : `−${sui(-mist)}`
 }
 
 export function OnchainPanel({ onSeed }: Props) {
@@ -56,6 +63,7 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
   const bondMist = BigInt(deployment.house.challengerBondMist)
   const windowOpen = state.deadlineMs !== null && Date.now() < state.deadlineMs
   const canChallenge = check === 'mismatch' && state.phase === 'verifying' && !state.challengeDigest
+  const result = settlement(state, account?.address ?? null, BET_MIST, bondMist)
 
   return (
     <section className="onchain-panel" aria-label="On-chain play">
@@ -126,15 +134,23 @@ function ConnectedPanel({ name, deployment, onSeed }: Props & { name: string; de
               </dd>
             </>
           )}
-          {state.payoutMist !== null && (
-            <>
-              <dt>Payout</dt>
-              <dd>
-                <strong>{sui(state.payoutMist)}</strong> (bet {sui(BET_MIST)})
-              </dd>
-            </>
-          )}
         </dl>
+      )}
+      {result && (
+        <table className="settlement" aria-label="Your wallet this round">
+          <tbody>
+            {result.lines.map((line) => (
+              <tr key={line.label}>
+                <th scope="row">{line.label}</th>
+                <td>{signedSui(line.mist)}</td>
+              </tr>
+            ))}
+            <tr className={`net ${result.netMist < 0n ? 'loss' : 'gain'}`}>
+              <th scope="row">Net</th>
+              <td>{signedSui(result.netMist)}</td>
+            </tr>
+          </tbody>
+        </table>
       )}
     </section>
   )

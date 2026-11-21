@@ -17,3 +17,9 @@
 .onchain-panel .check.mismatch { color: #e06c75; font-weight: 600; }
 .onchain-panel button.challenge { background: #e06c75; border-color: #e06c75; color: #0b0f17; font-weight: 600; }
 .onchain-panel button.challenge:hover:not(:disabled) { background: #f08a92; border-color: #f08a92; }
+.onchain-panel .settlement { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.onchain-panel .settlement th { text-align: left; font-weight: normal; color: #8a94a6; padding: 2px 0; }
+.onchain-panel .settlement td { text-align: right; padding: 2px 0; }
+.onchain-panel .settlement .net th, .onchain-panel .settlement .net td { border-top: 1px solid #2c3850; padding-top: 6px; font-weight: 600; color: #e6e9ef; }
+.onchain-panel .settlement .net.gain td { color: #98c379; }
+.onchain-panel .settlement .net.loss td { color: #e06c75; }
