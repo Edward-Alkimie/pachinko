@@ -16,6 +16,14 @@ export const SeedDrawn = bcs.struct('SeedDrawn', {
   round: bcs.Address,
   round_id: bcs.u64(),
   seed: bcs.vector(bcs.u8()),
+  submit_deadline_ms: bcs.u64(),
+})
+
+export const Refunded = bcs.struct('Refunded', {
+  round: bcs.Address,
+  round_id: bcs.u64(),
+  player: bcs.Address,
+  amount: bcs.u64(),
 })
 
 export const ResultSubmitted = bcs.struct('ResultSubmitted', {
@@ -41,8 +49,27 @@ export const Resolved = bcs.struct('Resolved', {
   operator_honest: bcs.bool(),
   winner: bcs.Address,
   award: bcs.u64(),
+  by_committee: bcs.bool(),
   result_hash: bcs.vector(bcs.u8()),
 })
+
+export const CommitteeSelected = bcs.struct('CommitteeSelected', {
+  round: bcs.Address,
+  round_id: bcs.u64(),
+  committee: bcs.vector(bcs.Address),
+  deadline_ms: bcs.u64(),
+})
+
+export const Voted = bcs.struct('Voted', {
+  round: bcs.Address,
+  round_id: bcs.u64(),
+  voter: bcs.Address,
+  result_hash: bcs.vector(bcs.u8()),
+})
+
+export const VerifierJoined = bcs.struct('VerifierJoined', { verifier: bcs.Address, stake: bcs.u64() })
+export const VerifierLeft = bcs.struct('VerifierLeft', { verifier: bcs.Address, stake: bcs.u64() })
+export const VerifierSlashed = bcs.struct('VerifierSlashed', { verifier: bcs.Address, amount: bcs.u64() })
 
 export const Finalized = bcs.struct('Finalized', {
   round: bcs.Address,
@@ -55,10 +82,16 @@ export const Finalized = bcs.struct('Finalized', {
 const MODULE_OF = {
   RoundCreated: 'round',
   SeedDrawn: 'round',
+  Refunded: 'round',
   ResultSubmitted: 'verification',
   Challenged: 'verification',
+  CommitteeSelected: 'verification',
+  Voted: 'verification',
   Resolved: 'verification',
   Finalized: 'verification',
+  VerifierJoined: 'committee',
+  VerifierLeft: 'committee',
+  VerifierSlashed: 'committee',
 } as const
 
 export type EventName = keyof typeof MODULE_OF

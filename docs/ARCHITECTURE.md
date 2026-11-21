@@ -180,7 +180,7 @@ createRoundTx → sign ───────────────────
                                                                                nextAction(fetchRound) = drawSeed → drawSeedTx
 fetchRound every 2 s: status / seed  ◀─────── SEEDED ◀─────────────────────────  nextAction = submit → runRound(seed) → submitResultTx
 replay hash vs fetchSubmission hash           SUBMITTED (window) ◀──────────── nextAction = wait until deadline + 3 s
-  └─ challengeTx (player decides) ─────────▶ CHALLENGED ─────────────────────▶ arbiter: runRound → resolveByAdminTx
+  └─ challengeTx (player decides) ─────────▶ CHALLENGED ─────────────────────▶ committee votes; after the vote deadline: arbiter fallback → resolveByAdminTx
 findFinalized + findResolved → net  ◀──────── FINALIZED ◀───────────────────── nextAction = finalize → finalizeTx
 ```
 
@@ -191,11 +191,12 @@ Then the panel compares the replay hash with the submitted one (`replayCheck`) a
 window is open. The wallet signs the bet and, if the player chooses, the challenge.
 
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
-picks up where it stopped. Challenged rounds are left to the arbiter.
+picks up where it stopped. Challenged rounds are left to the committee (and the arbiter fallback).
 
-**Arbiter** (same process, when the key also holds the `AdminCap`): `listEvents(Challenged)` → round still
-CHALLENGED → `runRound(seed)` → `resolveByAdminTx(true outcomes)`. The contract compares hashes, gives both
-bonds to the honest side and pays the player from the true outcomes. Operator and arbiter take turns in one
+**Arbiter** (fallback; same process, when the key also holds the `AdminCap`): `listEvents(Challenged)` → wait
+for the dispute's vote deadline (+ 3 s) → round still CHALLENGED (the committee did not decide) → `runRound(seed)`
+→ `resolveByAdminTx(true outcomes)`. The contract compares hashes, gives both bonds to the honest side and pays
+the player from the true outcomes. Operator and arbiter take turns in one
 loop, one transaction at a time, so they never compete for the key's gas coin.
 
 ---
@@ -267,12 +268,12 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | replay CLI | src/cli.ts | `npm run replay -- <seed> [roundId]` | ✅ |
 | `PORT` | src/config.ts | port from `PHYSICS_SERVICE_PORT` (validated) | ✅ |
 | `nextAction` | src/operator/nextAction.ts | on-chain `RoundView` (+ deadline) → `drawSeed` / `submit` / `wait` / `finalize` / `drop` (pure) | ✅ |
-| `arbiterAction` | src/operator/nextAction.ts | on-chain `RoundView` → `resolve` (CHALLENGED, same physics version) / `drop` (pure) | ✅ |
+| `arbiterAction` | src/operator/nextAction.ts | on-chain `RoundView` + vote deadline → `wait` (until deadline + 3 s) / `resolve` (still CHALLENGED, same physics version) / `drop` (pure) | ✅ |
 | `createRoundFeed` → `next` | src/operator/roundFeed.ts | object ids of rounds in new events of one type (oldest-first cursor) | ✅ |
 | `createOperator` → `tick` | src/operator/operator.ts | poll `RoundCreated` events, advance each round one tx at a time, retry failures after 30 s | ✅ |
-| `createArbiter` → `tick` | src/operator/arbiter.ts | poll `Challenged` events, re-run each round, `resolve_by_admin` with the true outcomes, retry failures after 30 s | ✅ |
+| `createArbiter` → `tick` | src/operator/arbiter.ts | poll `Challenged` events; after the vote deadline, re-run any round still CHALLENGED and `resolve_by_admin` with the true outcomes; retry failures after 30 s | ✅ |
 | `parseCheat` / `forgeOutcomes` | src/operator/cheat.ts | demo only: `OPERATOR_CHEAT=shortchange` → every ball reported as never landed; the operator submits them with a matching hash | ✅ |
-| operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap` (and runs the arbiter if it also owns the `AdminCap`), polls every 2 s (Flow G) | ✅ |
+| operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap` (and runs the fallback arbiter if it also owns the `AdminCap`), polls every 2 s (Flow G) | ✅ |
 
 ### `backend/` (Django)
 
@@ -317,9 +318,9 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 |---|---|---|---|---|
 | `parseDeployment` | deployment.ts | JSON → checked `Deployment` (ids + House settings) | everything | ✅ |
 | `deploymentName` / `loadDeployment` / `saveDeployment` / `deploymentNames` | node.ts (`@pachinko/chain/node`) | `PACHINKO_DEPLOYMENT` → `deployments/<name>.json` (one per teammate) | scripts, operator | ✅ |
-| `createRoundTx` / `drawSeedTx` / `submitResultTx` / `challengeTx` / `resolveByAdminTx` / `finalizeTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, frontend | ✅ |
-| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` (BCS) | operator, (next) frontend | ✅ |
-| event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, operator | ✅ |
+| `createRoundTx` / `drawSeedTx` / `refundUnsubmittedTx` / `submitResultTx` / `challengeTx` / `selectCommitteeTx` / `voteTx` / `resolveByAdminTx` / `finalizeTx` / `joinPoolTx` / `leavePoolTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, frontend | ✅ |
+| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `fetchDispute` / `parseDispute` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` / `DisputeView` (BCS) | operator, arbiter, frontend | ✅ |
+| event layouts + `eventType` | events.ts | BCS event schemas (round, verification, committee), `0xpkg::module::Name` | scripts, operator, frontend | ✅ |
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
 | `signAndExecute` / `readEvent` | execute.ts | keypair + tx → executed tx (throws on abort, waits for indexing); decode one event | scripts, operator | ✅ |
 | `findFinalized` / `findResolved` | events.ts | round object id → its `Finalized` event (payout) / `Resolved` event (verdict, bond award), or `null` (ascending scan) | scripts, frontend | ✅ |

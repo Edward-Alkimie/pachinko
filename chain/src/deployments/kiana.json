@@ -1,10 +1,10 @@
 {
   "network": "testnet",
-  "packageId": "0x3738a27bc8e378210400ab634bf905cd75b43545db72f279f41ed72693c30bb0",
-  "gameId": "0x8286060459be2689f7b58a06b03982d6bd065fae971eebf674b811875d030839",
-  "houseId": "0x96096c98e1e449183b1dfaa620eb7414d7eee78863e5f72b0292fa6a010fbe02",
-  "adminCapId": "0xb21b8a54971c2295ef68a693d94baee7f6f4c843cb0f2f498b8338c58ab9fd80",
-  "operatorCapId": "0xcb04168eb21fe170ab1ff0a134975f300f9eded040d9afb1e3af10484b28388d",
+  "packageId": "0x3a6d1d421d136457f51d746df6f5bdcd8c926ec2382032957be70bdb409a0ebb",
+  "gameId": "0x4c2ee0bde5dea5475ef9da111a91439fc6915c736229b15ffdfa88a5996edada",
+  "houseId": "0xe8d2f36fb9579d96562e4cebb3ba47408383ddaf9e423bf00fa0a5d3a16cd7eb",
+  "adminCapId": "0x94f705d5801628a620e58462b3f33c34502ef34f6b786eed14be375316375b86",
+  "operatorCapId": "0xe79d74ee432ed62da35655088cdaf6c1ad4f686986b3e9fa73b05301b7a15e61",
   "house": {
     "multipliersBps": [
       "10000",
@@ -18,6 +18,8 @@
     "ballsPerRound": "100",
     "operatorBondMist": "10000000",
     "challengerBondMist": "10000000",
-    "challengeWindowMs": "30000"
+    "challengeWindowMs": "30000",
+    "verifierStakeMist": "20000000",
+    "voteWindowMs": "60000"
   }
 }

@@ -172,14 +172,16 @@ public(package) fun settle(
         let vote = votes.find_index!(|v| v.voter == member);
         let voted = vote.is_some();
         let voted_correctly = voted && &votes[vote.destroy_some()].result_hash == correct_hash;
-        // Slashed: a wrong vote, or (after a failed committee) no vote at all.
-        let slashed = (voted && !voted_correctly) || (!voted && !by_committee);
-        if (slashed) {
-            reward.join(slash_and_remove(pool, member, ctx));
-        } else {
-            let verifier = &mut pool.verifiers[member];
-            verifier.open_duties = verifier.open_duties - 1;
-            if (voted_correctly) correct_voters.push_back(member);
+        if (voted_correctly) correct_voters.push_back(member);
+        // A verifier slashed in another dispute has already left the pool: nothing to slash or free.
+        if (pool.verifiers.contains(member)) {
+            // Slashed: a wrong vote, or (after a failed committee) no vote at all.
+            let slashed = (voted && !voted_correctly) || (!voted && !by_committee);
+            if (slashed) {
+                reward.join(slash_and_remove(pool, member, ctx));
+            } else {
+                release(pool, member);
+            }
         }
     });
 
@@ -203,6 +205,12 @@ fun slash_and_remove(pool: &mut Pool, who: address, ctx: &mut TxContext): Balanc
     event::emit(VerifierSlashed { verifier: who, amount: slashed.value() });
     transfer::public_transfer(coin::from_balance(stake, ctx), who);
     slashed
+}
+
+/// Ends one duty of `who`. Never below 0: a verifier that left and rejoined starts again at 0.
+fun release(pool: &mut Pool, who: address) {
+    let verifier = &mut pool.verifiers[who];
+    if (verifier.open_duties > 0) verifier.open_duties = verifier.open_duties - 1;
 }
 
 fun remove(pool: &mut Pool, who: address): Balance<SUI> {

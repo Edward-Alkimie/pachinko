@@ -1,5 +1,5 @@
 /**
- * Reads the on-chain `Round` and its `Submission` (docs/SPEC.md §7). Both are decoded from BCS,
+ * Reads the on-chain `Round`, its `Submission` and its `Dispute` (docs/SPEC.md §7), decoded from BCS,
  * which is stable across transports (gRPC, GraphQL). Field order must match the Move structs.
  */
 import { bcs } from '@mysten/sui/bcs'
@@ -14,6 +14,7 @@ export const RoundStatus = {
   Submitted: 2,
   Challenged: 3,
   Finalized: 4,
+  Refunded: 5,
 } as const
 export type RoundStatus = (typeof RoundStatus)[keyof typeof RoundStatus]
 
@@ -25,6 +26,8 @@ const RoundBcs = bcs.struct('Round', {
   seed: bcs.vector(bcs.u8()),
   bet: bcs.u64(), // Balance<SUI> is a struct with one u64
   status: bcs.u8(),
+  submit_window_ms: bcs.u64(),
+  submit_deadline_ms: bcs.u64(),
 })
 
 const SubmissionBcs = bcs.struct('Submission', {
@@ -38,6 +41,13 @@ const SubmissionBcs = bcs.struct('Submission', {
   challenger_bond: bcs.u64(),
 })
 
+const DisputeBcs = bcs.struct('Dispute', {
+  deadline_ms: bcs.u64(),
+  excluded: bcs.vector(bcs.Address),
+  committee: bcs.vector(bcs.Address),
+  votes: bcs.vector(bcs.struct('Vote', { voter: bcs.Address, result_hash: bcs.vector(bcs.u8()) })),
+})
+
 export interface RoundView {
   readonly objectId: string
   readonly roundId: bigint
@@ -47,6 +57,8 @@ export interface RoundView {
   readonly seed: Uint8Array | null
   readonly betMist: bigint
   readonly status: RoundStatus
+  /** When the bet becomes refundable if no result was submitted (`0` until seeded). */
+  readonly submitDeadlineMs: number
 }
 
 export interface SubmissionView {
@@ -56,6 +68,14 @@ export interface SubmissionView {
   readonly resultHash: Uint8Array
   readonly deadlineMs: number
   readonly challenger: string | null
+}
+
+export interface DisputeView {
+  /** Votes are accepted before this; the admin fallback only from it on. */
+  readonly deadlineMs: number
+  /** Drawn verifiers (empty until `select_committee`). */
+  readonly committee: string[]
+  readonly votes: { readonly voter: string; readonly resultHash: Uint8Array }[]
 }
 
 export function parseRound(content: Uint8Array): RoundView {
@@ -68,6 +88,7 @@ export function parseRound(content: Uint8Array): RoundView {
     seed: r.seed.length > 0 ? Uint8Array.from(r.seed) : null,
     betMist: BigInt(r.bet),
     status: r.status as RoundStatus,
+    submitDeadlineMs: Number(r.submit_deadline_ms),
   }
 }
 
@@ -79,6 +100,15 @@ export function parseSubmission(value: Uint8Array): SubmissionView {
     resultHash: Uint8Array.from(s.result_hash),
     deadlineMs: Number(s.deadline_ms),
     challenger: s.challenger ?? null,
+  }
+}
+
+export function parseDispute(value: Uint8Array): DisputeView {
+  const d = DisputeBcs.parse(value)
+  return {
+    deadlineMs: Number(d.deadline_ms),
+    committee: d.committee,
+    votes: d.votes.map((v) => ({ voter: v.voter, resultHash: Uint8Array.from(v.result_hash) })),
   }
 }
 
@@ -99,4 +129,17 @@ export async function fetchSubmission(
     name: { type: `${d.packageId}::verification::SubmissionKey`, bcs: new Uint8Array([0]) },
   })
   return parseSubmission(dynamicField.value.bcs)
+}
+
+/** The open dispute of a challenged round (removed once it is settled). */
+export async function fetchDispute(
+  client: ClientWithCoreApi,
+  d: Deployment,
+  roundObjectId: string,
+): Promise<DisputeView> {
+  const { dynamicField } = await client.core.getDynamicField({
+    parentId: roundObjectId,
+    name: { type: `${d.packageId}::verification::DisputeKey`, bcs: new Uint8Array([0]) },
+  })
+  return parseDispute(dynamicField.value.bcs)
 }
