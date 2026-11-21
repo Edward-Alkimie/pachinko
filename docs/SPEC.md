@@ -194,16 +194,19 @@ Everything that talks to the contracts imports this package (scripts, operator, 
 
 - **Named deployments:** each teammate has their own copy of the contracts, in `chain/src/deployments/<name>.json`:
   `{ network: "testnet", packageId, gameId, houseId, adminCapId, operatorCapId, house: { multipliersBps[],
-  ballsPerRound, operatorBondMist, challengerBondMist, challengeWindowMs } }`. u64 values are decimal strings.
+  ballsPerRound, operatorBondMist, challengerBondMist, challengeWindowMs, verifierStakeMist, voteWindowMs } }`.
+  u64 values are decimal strings.
   - **Selecting:** `PACHINKO_DEPLOYMENT=<name>` in `.env` picks the file (lowercase letters, digits, dashes).
   - **Writing:** `npm run deploy:testnet` writes it, a redeploy replaces it, and the files are committed since the ids are public.
   - **Frontend:** `VITE_PACHINKO_DEPLOYMENT=<name>` (same file, read through a Vite glob).
   - **Reading:** `parseDeployment` (browser-safe) checks the shape. In Node, `@pachinko/chain/node` has `deploymentName`,
     `loadDeployment(name?)`, `saveDeployment` and `deploymentNames`.
-- Transaction builders return an unsigned `Transaction`: `createRoundTx`, `drawSeedTx`, `submitResultTx`, `challengeTx`,
-  `resolveByAdminTx`, `finalizeTx`, `setUpHouseTx`, `fundHouseTx`. Bonds are split from gas using the deployment's amounts.
-- Reads: `fetchRound` → `RoundView` (`seed` is `null` until drawn), `fetchSubmission` → `SubmissionView` (from SUBMITTED on),
-  `RoundStatus` (§7.1 values). Events: BCS layouts + `eventType(packageId, name)`.
+- Transaction builders return an unsigned `Transaction`: `createRoundTx`, `drawSeedTx`, `refundUnsubmittedTx`,
+  `submitResultTx`, `challengeTx`, `selectCommitteeTx`, `voteTx`, `resolveByAdminTx`, `finalizeTx`, `joinPoolTx`,
+  `leavePoolTx`, `setUpHouseTx`, `fundHouseTx`. Bonds and the verifier stake are split from gas using the deployment's amounts.
+- Reads: `fetchRound` → `RoundView` (`seed` is `null` until drawn; `submitDeadlineMs`), `fetchSubmission` → `SubmissionView`
+  (from SUBMITTED on), `fetchDispute` → `DisputeView` (committee, votes, deadline; only while CHALLENGED), `RoundStatus`
+  (§7.1 values). Events: BCS layouts + `eventType(packageId, name)` (module: `round`, `verification` or `committee`).
 - Outcomes: `toOnchainOutcomes` / `fromOnchainOutcomes` (`-1` ↔ `0xFFFF`).
 - Server side: `signAndExecute(client, signer, tx)` (throws on abort, waits for indexing), `readEvent`.
   `findFinalized(client, packageId, roundObjectId)` → the round's `Finalized` event (payout), or `null`.

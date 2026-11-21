@@ -1,16 +1,19 @@
 /**
- * Arbiter loop (step 2 of docs/CONTRACTS.md §1, "resolve"): finds rounds from `Challenged` events,
- * re-runs each one's physics and settles it with `resolve_by_admin`. The contract compares the
- * true hash with the submitted one: the dishonest side loses its bond, and the player is paid
- * from the true outcomes. Needs the key that holds the AdminCap; a committee replaces it later.
+ * Arbiter loop, the fallback of step 2 in docs/CONTRACTS.md §1 ("resolve"): finds rounds from
+ * `Challenged` events and, for any still CHALLENGED once the committee's vote deadline has passed,
+ * re-runs the physics and settles it with `resolve_by_admin`. The contract compares the true hash
+ * with the submitted one: the dishonest side loses its bond, and the player is paid from the true
+ * outcomes. Rounds the committee settles in time are simply dropped. Needs the AdminCap key.
  */
 import type { ClientWithCoreApi } from '@mysten/sui/client'
 import type { Signer } from '@mysten/sui/cryptography'
 import {
   Challenged,
   Resolved,
+  RoundStatus,
   TESTNET_EXPLORER_TX,
   eventType,
+  fetchDispute,
   fetchRound,
   readEvent,
   resolveByAdminTx,
@@ -42,10 +45,16 @@ export function createArbiter({ client, signer, deployment, config, log }: Arbit
 
   async function settle(objectId: string) {
     const round = await fetchRound(client, objectId)
-    const action = arbiterAction(round, config.version)
+    const voteDeadlineMs =
+      round.status === RoundStatus.Challenged ? (await fetchDispute(client, deployment, objectId)).deadlineMs : null
+    const action = arbiterAction(round, voteDeadlineMs, Date.now(), config.version)
     if (action.kind === 'drop') {
       rounds.delete(objectId)
       log(`round ${round.roundId} arbiter done: ${action.reason}`)
+      return
+    }
+    if (action.kind === 'wait') {
+      rounds.set(objectId, action.untilMs)
       return
     }
     if (!round.seed) throw new Error(`round ${round.roundId} is CHALLENGED but has no seed`)
@@ -54,7 +63,7 @@ export function createArbiter({ client, signer, deployment, config, log }: Arbit
     const resolved = readEvent(executed, eventType(deployment.packageId, 'Resolved'), Resolved)
     rounds.delete(objectId)
     const verdict = resolved.operator_honest ? 'operator honest' : 'operator forged'
-    log(`round ${round.roundId} resolve   ${verdict}, bonds → ${resolved.winner}  ${TESTNET_EXPLORER_TX}/${executed.digest}`)
+    log(`round ${round.roundId} fallback  ${verdict}, ${resolved.award} MIST → ${resolved.winner}  ${TESTNET_EXPLORER_TX}/${executed.digest}`)
   }
 
   return {

@@ -13,6 +13,7 @@ function round(status: RoundStatus, configVersion = VERSION): RoundView {
     seed: status === RoundStatus.BetLocked ? null : new Uint8Array(32),
     betMist: 10n,
     status,
+    submitDeadlineMs: 0,
   }
 }
 
@@ -41,22 +42,30 @@ describe('operator nextAction', () => {
     })
   })
 
-  it('drops challenged and finalized rounds', () => {
+  it('drops challenged, finalized and refunded rounds', () => {
     expect(nextAction(round(RoundStatus.Challenged), null, 0, VERSION).kind).toBe('drop')
     expect(nextAction(round(RoundStatus.Finalized), null, 0, VERSION).kind).toBe('drop')
+    expect(nextAction(round(RoundStatus.Refunded), null, 0, VERSION).kind).toBe('drop')
   })
 })
 
 describe('arbiter arbiterAction', () => {
-  it('resolves a challenged round that uses its physics version', () => {
-    expect(arbiterAction(round(RoundStatus.Challenged), VERSION)).toEqual({ kind: 'resolve' })
+  it('waits for the vote deadline (plus clock margin), then resolves as the fallback', () => {
+    const deadline = 60_000
+    expect(arbiterAction(round(RoundStatus.Challenged), deadline, deadline, VERSION)).toEqual({
+      kind: 'wait',
+      untilMs: deadline + CLOCK_MARGIN_MS,
+    })
+    expect(arbiterAction(round(RoundStatus.Challenged), deadline, deadline + CLOCK_MARGIN_MS, VERSION)).toEqual({
+      kind: 'resolve',
+    })
   })
 
   it('leaves a challenged round of another physics version alone', () => {
-    expect(arbiterAction(round(RoundStatus.Challenged, 'pachinko-v9'), VERSION).kind).toBe('drop')
+    expect(arbiterAction(round(RoundStatus.Challenged, 'pachinko-v9'), 0, 0, VERSION).kind).toBe('drop')
   })
 
-  it('drops a round that is no longer challenged', () => {
-    expect(arbiterAction(round(RoundStatus.Finalized), VERSION).kind).toBe('drop')
+  it('drops a round the committee already settled', () => {
+    expect(arbiterAction(round(RoundStatus.Finalized), null, 0, VERSION).kind).toBe('drop')
   })
 })

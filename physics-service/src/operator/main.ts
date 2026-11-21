@@ -1,6 +1,6 @@
 /**
  * Runs the operator for your deployment (PACHINKO_DEPLOYMENT in the repo-root .env), and the
- * arbiter too when the same key holds the AdminCap (the normal case: the key that deployed).
+ * fallback arbiter too when the same key holds the AdminCap (the normal case: the key that deployed).
  * Both run in this one process, one transaction at a time, so they never compete for the key's
  * gas coin. Key: OPERATOR_PRIVATE_KEY (must own that deployment's OperatorCap), or SUI_PRIVATE_KEY
  * when unset. Demo only: OPERATOR_CHEAT=shortchange forges every result (see ./cheat.ts).
@@ -57,7 +57,11 @@ async function main() {
   const arbiter =
     adminCapOwner === address ? createArbiter({ client, signer, deployment, config: DEFAULT_CONFIG, log }) : null
   log(`operator ${address} on deployment ${name} (${deployment.packageId}, ${DEFAULT_CONFIG.version})`)
-  log(arbiter ? 'arbiter on: settles challenged rounds' : `arbiter off: the AdminCap belongs to ${adminCapOwner}`)
+  log(
+    arbiter
+      ? 'arbiter on: settles challenged rounds the committee leaves undecided'
+      : `arbiter off: the AdminCap belongs to ${adminCapOwner}`,
+  )
   if (cheat) log(`CHEATING (OPERATOR_CHEAT=${cheat}): every result is forged. Demo only.`)
 
   let running = true

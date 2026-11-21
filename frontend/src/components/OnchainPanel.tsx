@@ -35,12 +35,13 @@ const STAGE_TEXT: Record<OnchainStage, string> = {
   playing: 'Seed drawn on-chain. Playing your round…',
   waitingResult: "Waiting for the operator's result…",
   verifying: 'Result submitted. Challenge window open.',
-  challenged: 'Result challenged. Waiting for the arbiter…',
+  challenged: "Result challenged. Waiting for the committee's votes…",
   final: 'Round final. What it did to your wallet:',
+  refunded: 'The operator sent no result in time, so your bet was refunded.',
   error: 'Something went wrong.',
 }
 
-const IDLE: readonly OnchainStage[] = ['idle', 'final', 'error']
+const IDLE: readonly OnchainStage[] = ['idle', 'final', 'refunded', 'error']
 
 const CHECK_TEXT: Record<Exclude<ReplayCheck, null>, string> = {
   match: '✓ Your replay matches the submitted result.',

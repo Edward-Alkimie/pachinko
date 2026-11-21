@@ -38,6 +38,8 @@ function houseSettings(env: ScriptEnv): HouseSettings {
     operatorBondMist: String(env.operatorBondMist),
     challengerBondMist: String(env.challengerBondMist),
     challengeWindowMs: String(env.challengeWindowMs),
+    verifierStakeMist: String(env.verifierStakeMist),
+    voteWindowMs: String(env.voteWindowMs),
   }
 }
 

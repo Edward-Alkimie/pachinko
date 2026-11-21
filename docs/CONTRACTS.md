@@ -183,7 +183,9 @@ player follows it. The two runs below from 2026-11-17 were made with the former 
 
 Deployments: each teammate has their own (`PACHINKO_DEPLOYMENT` in `.env` picks
 `chain/src/deployments/<name>.json`), so tests on one machine never touch another person's rounds.
-`kiana`: package `0x3738a27bc8e378210400ab634bf905cd75b43545db72f279f41ed72693c30bb0` (2026-11-17).
+`kiana`: package `0x3a6d1d421d136457f51d746df6f5bdcd8c926ec2382032957be70bdb409a0ebb` (2026-11-21, with the committee and
+the refund timeout; earlier `0x3738…0bb0`). After a contract change every teammate runs `npm run deploy:testnet` again:
+new structs can't be a package upgrade.
 The first two runs below are from earlier one-off publishes.
 
 ### Testnet run: honest round (2026-11-17)
@@ -367,6 +369,8 @@ Money when the committee settles (defaults; easy to change):
 - **The drawn verifier who had not voted yet** when 2 agreed: no reward, no slash (its vote was not needed).
 - **Committee fails** (no 2 agreeing votes by the deadline): drawn verifiers who did not vote lose half their
   stake and leave the pool; the admin fallback settles the bonds as today (winner takes both).
+- **A verifier drawn for two disputes** and slashed in one has left the pool; when the other settles it is
+  neither slashed again nor freed (and a verifier that rejoined meanwhile never drops below 0 duties).
 - The player is always paid from the correct outcomes, as today.
 
 New events: `CommitteeSelected { round, committee, deadline_ms }`, `Voted { round, voter, result_hash }`
@@ -409,3 +413,13 @@ New events: `CommitteeSelected { round, committee, deadline_ms }`, `Voted { roun
 - **Copying votes:** with plain votes a lazy verifier can copy an earlier on-chain vote instead of
   re-running; commit-reveal would stop that (not chosen, for time).
 - **Admin fallback** keeps one trusted party as a last resort when the committee fails.
+
+### Testnet runs: refund timeout and admin fallback (2026-11-21)
+
+Deployment `kiana`, package `0x3a6d…0ebb` (committee + timeout), no verifiers in the pool yet.
+
+| Run | What happened | Digests |
+|---|---|---|
+| Round 1, honest | operator + `bet:testnet`: hashes matched (`e137840f…258b`), finalized after the window | seed `5NiQ3jGd…`, submit `CPWwobY8…`, finalize `2fVUt6Mg…` |
+| Round 2, refund | no operator: bet + seed, waited out the 2-minute submit window, `refund_unsubmitted` → status 5, 0.01 SUI back to the player | bet `A7Xs3ocF…`, seed `HZXSzxh2…`, refund `6V7o6VrG…` |
+| Round 3, admin fallback | operator shortchanged, `bet:testnet` challenged (`4XwWqqiZ…`); no committee could be drawn, so 63 s later (vote window + 3 s margin) the arbiter resolved it (`B2Z3hHcy…`): operator forged, `by_committee = false`, both bonds (0.02 SUI) to the challenger, player paid from the true outcomes | seed `8krfNUxG…`, submit `FiwEKdnP…` |

@@ -47,6 +47,7 @@ export type OnchainPhase =
   | 'verifying'
   | 'challenged'
   | 'final'
+  | 'refunded'
   | 'error'
 
 /** The page's own replay of the seed: `interrupted` = the board was given another round meanwhile. */
@@ -118,6 +119,8 @@ export function phaseFor(status: RoundStatus): OnchainPhase {
       return 'challenged'
     case RoundStatus.Finalized:
       return 'final'
+    case RoundStatus.Refunded:
+      return 'refunded'
   }
 }
 
@@ -204,7 +207,7 @@ export function useOnchainRound(
         return { settled: true, seedPlayed }
       }
       setState((s) => ({ ...s, phase }))
-      return { settled: false, seedPlayed }
+      return { settled: phase === 'refunded', seedPlayed }
     },
     [dAppKit, deployment, playSeed],
   )

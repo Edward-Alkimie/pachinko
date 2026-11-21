@@ -29,6 +29,8 @@ const DEPLOYMENT: Deployment = {
     operatorBondMist: '10',
     challengerBondMist: '10',
     challengeWindowMs: '30000',
+    verifierStakeMist: '20',
+    voteWindowMs: '60000',
   },
 }
 const ROUND = id('ab')
@@ -50,6 +52,7 @@ function view(status: RoundStatus): RoundView {
     seed: status === RoundStatus.BetLocked ? null : SEED,
     betMist: BET_MIST,
     status,
+    submitDeadlineMs: 0,
   }
 }
 
@@ -268,5 +271,6 @@ describe('phaseFor', () => {
     expect(phaseFor(RoundStatus.Submitted)).toBe('verifying')
     expect(phaseFor(RoundStatus.Challenged)).toBe('challenged')
     expect(phaseFor(RoundStatus.Finalized)).toBe('final')
+    expect(phaseFor(RoundStatus.Refunded)).toBe('refunded')
   })
 })

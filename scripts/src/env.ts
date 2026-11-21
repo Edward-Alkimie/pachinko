@@ -16,6 +16,8 @@ export interface ScriptEnv {
   readonly operatorBondMist: bigint
   readonly challengerBondMist: bigint
   readonly challengeWindowMs: bigint
+  readonly verifierStakeMist: bigint
+  readonly voteWindowMs: bigint
   /** Payout per pocket in basis points (10 000 = 1×), one per physics pocket. */
   readonly multipliersBps: readonly bigint[]
 }
@@ -44,6 +46,8 @@ export function loadEnv(): ScriptEnv {
     operatorBondMist: mist('PACHINKO_OPERATOR_BOND_MIST', '10000000'),
     challengerBondMist: mist('PACHINKO_CHALLENGER_BOND_MIST', '10000000'),
     challengeWindowMs: mist('PACHINKO_CHALLENGE_WINDOW_MS', '30000'),
+    verifierStakeMist: mist('PACHINKO_VERIFIER_STAKE_MIST', '20000000'),
+    voteWindowMs: mist('PACHINKO_VOTE_WINDOW_MS', '60000'),
     multipliersBps: optional('PACHINKO_MULTIPLIERS_BPS', '10000,10000,10000,10000,10000,10000,10000')
       .split(',')
       .map((part, i) => {
