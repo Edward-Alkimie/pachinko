@@ -30,9 +30,11 @@ export type { Executed } from './execute'
 export {
   RoundStatus,
   fetchDispute,
+  fetchPoolMembers,
   fetchRound,
   fetchSubmission,
   parseDispute,
+  parsePoolMembers,
   parseRound,
   parseSubmission,
 } from './objects'

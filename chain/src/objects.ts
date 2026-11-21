@@ -1,5 +1,6 @@
 /**
- * Reads the on-chain `Round`, its `Submission` and its `Dispute` (docs/SPEC.md §7), decoded from BCS,
+ * Reads the on-chain `Round`, its `Submission` and `Dispute`, and the `House`'s verifier pool
+ * (docs/SPEC.md §7), decoded from BCS,
  * which is stable across transports (gRPC, GraphQL). Field order must match the Move structs.
  */
 import { bcs } from '@mysten/sui/bcs'
@@ -46,6 +47,22 @@ const DisputeBcs = bcs.struct('Dispute', {
   excluded: bcs.vector(bcs.Address),
   committee: bcs.vector(bcs.Address),
   votes: bcs.vector(bcs.struct('Vote', { voter: bcs.Address, result_hash: bcs.vector(bcs.u8()) })),
+})
+
+const HouseBcs = bcs.struct('House', {
+  id: bcs.Address,
+  treasury: bcs.u64(),
+  multipliers_bps: bcs.vector(bcs.u64()),
+  balls_per_round: bcs.u64(),
+  operator_bond: bcs.u64(),
+  challenger_bond: bcs.u64(),
+  challenge_window_ms: bcs.u64(),
+  vote_window_ms: bcs.u64(),
+  pool: bcs.struct('Pool', {
+    stake: bcs.u64(),
+    members: bcs.vector(bcs.Address),
+    verifiers: bcs.struct('Table', { id: bcs.Address, size: bcs.u64() }),
+  }),
 })
 
 export interface RoundView {
@@ -103,6 +120,11 @@ export function parseSubmission(value: Uint8Array): SubmissionView {
   }
 }
 
+/** Addresses in the House's verifier pool. */
+export function parsePoolMembers(houseContent: Uint8Array): string[] {
+  return HouseBcs.parse(houseContent).pool.members
+}
+
 export function parseDispute(value: Uint8Array): DisputeView {
   const d = DisputeBcs.parse(value)
   return {
@@ -142,4 +164,10 @@ export async function fetchDispute(
     name: { type: `${d.packageId}::verification::DisputeKey`, bcs: new Uint8Array([0]) },
   })
   return parseDispute(dynamicField.value.bcs)
+}
+
+/** Addresses currently in the deployment's verifier pool. */
+export async function fetchPoolMembers(client: ClientWithCoreApi, d: Deployment): Promise<string[]> {
+  const { object } = await client.core.getObject({ objectId: d.houseId, include: { content: true } })
+  return parsePoolMembers(object.content)
 }

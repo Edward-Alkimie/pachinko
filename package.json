@@ -10,7 +10,9 @@
     "build": "npm run build --workspaces --if-present",
     "replay": "npm run replay -w physics-service --",
     "operator": "npm run operator -w physics-service",
+    "verifier": "npm run verifier -w physics-service",
     "deploy:testnet": "npm run deploy:testnet -w scripts",
-    "bet:testnet": "npm run bet:testnet -w scripts"
+    "bet:testnet": "npm run bet:testnet -w scripts",
+    "verifiers:setup": "npm run verifiers:setup -w scripts"
   }
 }

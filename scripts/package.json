@@ -6,6 +6,7 @@
   "scripts": {
     "deploy:testnet": "tsx src/deploy.ts",
     "bet:testnet": "tsx src/bet.ts",
+    "verifiers:setup": "tsx src/verifiersSetup.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

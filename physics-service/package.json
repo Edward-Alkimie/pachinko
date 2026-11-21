@@ -8,6 +8,7 @@
     "start": "tsx src/server.ts",
     "replay": "tsx src/cli.ts",
     "operator": "tsx src/operator/main.ts",
+    "verifier": "tsx src/verifier/main.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -205,7 +205,8 @@ Everything that talks to the contracts imports this package (scripts, operator, 
   `submitResultTx`, `challengeTx`, `selectCommitteeTx`, `voteTx`, `resolveByAdminTx`, `finalizeTx`, `joinPoolTx`,
   `leavePoolTx`, `setUpHouseTx`, `fundHouseTx`. Bonds and the verifier stake are split from gas using the deployment's amounts.
 - Reads: `fetchRound` → `RoundView` (`seed` is `null` until drawn; `submitDeadlineMs`), `fetchSubmission` → `SubmissionView`
-  (from SUBMITTED on), `fetchDispute` → `DisputeView` (committee, votes, deadline; only while CHALLENGED), `RoundStatus`
+  (from SUBMITTED on), `fetchDispute` → `DisputeView` (committee, votes, deadline; only while CHALLENGED),
+  `fetchPoolMembers` → addresses in the House's verifier pool, `RoundStatus`
   (§7.1 values). Events: BCS layouts + `eventType(packageId, name)` (module: `round`, `verification` or `committee`).
 - Outcomes: `toOnchainOutcomes` / `fromOnchainOutcomes` (`-1` ↔ `0xFFFF`).
 - Server side: `signAndExecute(client, signer, tx)` (throws on abort, waits for indexing), `readEvent`.

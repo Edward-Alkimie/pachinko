@@ -172,8 +172,9 @@ Setup and running a round: root `README.md`. Build, test, keys and troubleshooti
 | File | Does |
 |---|---|
 | `src/deploy.ts` | `npm run deploy:testnet`: `deploy`, then saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
+| `src/verifiersSetup.ts` | `npm run verifiers:setup`: funds each `VERIFIER_PRIVATE_KEYS` key from the main key (stake + 0.05 SUI gas) and joins it to the pool; skips keys already in it |
 | `src/bet.ts` | `npm run bet:testnet`: player side only: `createRound`, then follow the round's status until FINALIZED. At SUBMITTED it replays the seed and compares hashes (§1 step 1); on a mismatch it challenges. Prints the verdict (if challenged) and the payout. Needs `npm run operator` running |
-| `src/steps.ts` | the steps the scripts sign (`@pachinko/chain` transactions): `deploy` (publish → create house → fund house) · `createRound` · `challenge`. The operator's steps (seed, submit, finalize) and the arbiter's live in `physics-service/src/operator/` |
+| `src/steps.ts` | the steps the scripts sign (`@pachinko/chain` transactions): `deploy` (publish → create house → fund house) · `createRound` · `challenge` · `fund` · `joinPool`. The operator's steps (seed, submit, finalize), the arbiter's and the verifiers' live in `physics-service/src/` |
 | `src/sui.ts` | `SuiGrpcClient` (testnet JSON-RPC is off), `execute` (sign, print digest + Suiscan link, fail on abort, wait for indexing), created-object and BCS-event readers, `buildPackage` (`sui move build --dump-bytecode-as-base64`) |
 | `src/env.ts` | settings from the repo-root `.env`; only `SUI_PRIVATE_KEY` is required |
 
@@ -393,7 +394,7 @@ New events: `CommitteeSelected { round, committee, deadline_ms }`, `Voted { roun
   rounds. Today operator and House are the same party, so it has no reason to; a split operator would need a
   penalty for missing the window.
 
-### 11.5 Off-chain pieces
+### 11.5 Off-chain pieces (verifier node and setup built; page next)
 
 - **Verifier node** (`physics-service`, `npm run verifier`, own `VERIFIER_PRIVATE_KEY`): on `Challenged`,
   calls `select_committee` if nobody has; on `CommitteeSelected` naming its address, runs `runRound` and

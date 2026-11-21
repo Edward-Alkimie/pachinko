@@ -193,6 +193,10 @@ window is open. The wallet signs the bet and, if the player chooses, the challen
 The operator keeps no state of its own: it reads each round's status before every step, so a restart
 picks up where it stopped. Challenged rounds are left to the committee (and the arbiter fallback).
 
+**Committee** (`npm run verifier`, keys in `VERIFIER_PRIVATE_KEYS`): `listEvents(Challenged)` → no committee yet →
+`selectCommitteeTx` (draws 3 with `sui::random`) → each drawn key: `runRound(seed)` → `voteTx(outcomes)`; the
+second matching vote settles the round on-chain (`Resolved.by_committee = true`).
+
 **Arbiter** (fallback; same process, when the key also holds the `AdminCap`): `listEvents(Challenged)` → wait
 for the dispute's vote deadline (+ 3 s) → round still CHALLENGED (the committee did not decide) → `runRound(seed)`
 → `resolveByAdminTx(true outcomes)`. The contract compares hashes, gives both bonds to the honest side and pays
@@ -274,6 +278,10 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `createArbiter` → `tick` | src/operator/arbiter.ts | poll `Challenged` events; after the vote deadline, re-run any round still CHALLENGED and `resolve_by_admin` with the true outcomes; retry failures after 30 s | ✅ |
 | `parseCheat` / `forgeOutcomes` | src/operator/cheat.ts | demo only: `OPERATOR_CHEAT=shortchange` → every ball reported as never landed; the operator submits them with a matching hash | ✅ |
 | operator CLI | src/operator/main.ts | `npm run operator`: checks the key owns the `OperatorCap` (and runs the fallback arbiter if it also owns the `AdminCap`), polls every 2 s (Flow G) | ✅ |
+| `verifierAction` | src/verifier/nextVote.ts | on-chain `RoundView` + `DisputeView` + own address → `select` (no committee yet) / `vote` (drawn, not voted) / `done` (pure) | ✅ |
+| `createVerifier` → `tick` | src/verifier/verifier.ts | poll `Challenged` events; draw the committee once; every drawn key re-runs the round and votes; retry failures after 30 s | ✅ |
+| verifier CLI | src/verifier/main.ts | `npm run verifier`: keys from `VERIFIER_PRIVATE_KEYS`, reports which are in the pool, polls every 2 s | ✅ |
+| `loadRepoEnv` / `testnetClient` / `runUntilStopped` / `log` | src/onchain.ts | start-up shared by the operator and verifier CLIs: .env, gRPC client, one-role-at-a-time loop | ✅ |
 
 ### `backend/` (Django)
 
@@ -319,7 +327,7 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | `parseDeployment` | deployment.ts | JSON → checked `Deployment` (ids + House settings) | everything | ✅ |
 | `deploymentName` / `loadDeployment` / `saveDeployment` / `deploymentNames` | node.ts (`@pachinko/chain/node`) | `PACHINKO_DEPLOYMENT` → `deployments/<name>.json` (one per teammate) | scripts, operator | ✅ |
 | `createRoundTx` / `drawSeedTx` / `refundUnsubmittedTx` / `submitResultTx` / `challengeTx` / `selectCommitteeTx` / `voteTx` / `resolveByAdminTx` / `finalizeTx` / `joinPoolTx` / `leavePoolTx` / `setUpHouseTx` / `fundHouseTx` | transactions.ts | deployment + args → unsigned `Transaction` | scripts, operator, frontend | ✅ |
-| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `fetchDispute` / `parseDispute` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` / `DisputeView` (BCS) | operator, arbiter, frontend | ✅ |
+| `fetchRound` / `parseRound` / `fetchSubmission` / `parseSubmission` / `fetchDispute` / `parseDispute` / `fetchPoolMembers` / `parsePoolMembers` / `RoundStatus` | objects.ts | object id → `RoundView` / `SubmissionView` / `DisputeView`; House → pool members (BCS) | operator, arbiter, verifier, frontend | ✅ |
 | event layouts + `eventType` | events.ts | BCS event schemas (round, verification, committee), `0xpkg::module::Name` | scripts, operator, frontend | ✅ |
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
 | `signAndExecute` / `readEvent` | execute.ts | keypair + tx → executed tx (throws on abort, waits for indexing); decode one event | scripts, operator | ✅ |
@@ -331,7 +339,8 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 |---|---|---|---|
 | `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy`, saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` | ✅ |
 | `main` / `checkResult` | src/bet.ts | `npm run bet:testnet`: player side only (create round, follow status); at SUBMITTED replays the seed, compares hashes, challenges on a mismatch; prints verdict + payout; needs a running operator | ✅ |
-| `deploy` / `createRound` / `challenge` | src/steps.ts | the steps the scripts sign: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |
+| `main` | src/verifiersSetup.ts | `npm run verifiers:setup`: for each `VERIFIER_PRIVATE_KEYS` not in the pool, `fund` (stake + gas from the main key) → `joinPool` | ✅ |
+| `deploy` / `createRound` / `challenge` / `fund` / `joinPool` | src/steps.ts | the steps the scripts sign: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |
 | `connect` / `execute` | src/sui.ts | gRPC client + signer; sign, print digest, fail on abort, wait for indexing | ✅ |
 | `buildPackage` / `publishedPackageId` / `createdObjectId` / `readEvent` | src/sui.ts | compiled modules for publish; ids of created objects; decode BCS events | ✅ |
 | `loadEnv` | src/env.ts | settings from `.env` (`SUI_PRIVATE_KEY` required) | ✅ |
