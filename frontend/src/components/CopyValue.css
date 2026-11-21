@@ -1,0 +1,9 @@
+.copy-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0; }
+.copy-value .value { overflow-wrap: anywhere; min-width: 0; }
+.copy-value .mono { font-family: ui-monospace, monospace; }
+.copy-value .mark { font-weight: 600; }
+.copy-value button.link { background: none; border: none; padding: 0; color: #8a94a6; text-decoration: underline; font-size: 0.8rem; cursor: pointer; }
+.copy-value button.link:hover:not(:disabled) { background: none; color: #e6e9ef; }
+.replay-command { display: grid; gap: 4px; font-size: 0.85rem; }
+.replay-command .hint { margin: 0; color: #8a94a6; }
+.replay-command .copy-value .value { background: #0b0f17; border-radius: 4px; padding: 4px 6px; }

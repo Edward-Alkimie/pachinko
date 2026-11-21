@@ -3,6 +3,7 @@
  */
 import { bcs } from '@mysten/sui/bcs'
 import type { ClientWithCoreApi } from '@mysten/sui/client'
+import type { DisputeView } from './objects'
 
 export const RoundCreated = bcs.struct('RoundCreated', {
   round: bcs.Address,
@@ -147,6 +148,28 @@ export function findFinalized(client: ClientWithCoreApi, packageId: string, roun
 /** The round's `Resolved` event (verdict, bond award), or `null` if it was never challenged and settled. */
 export function findResolved(client: ClientWithCoreApi, packageId: string, roundObjectId: string) {
   return findRoundEvent(client, packageId, 'Resolved', Resolved, roundObjectId)
+}
+
+/**
+ * A round's committee and its votes, read back from the `CommitteeSelected` and `Voted` events, or
+ * `null` if no committee was drawn. Use this once the round is settled: the `Dispute` object
+ * (`fetchDispute`) is removed in the same transaction as the deciding vote.
+ */
+export async function findCommitteeVotes(
+  client: ClientWithCoreApi,
+  packageId: string,
+  roundObjectId: string,
+): Promise<DisputeView | null> {
+  const [selected, votes] = await Promise.all([
+    findRoundEvent(client, packageId, 'CommitteeSelected', CommitteeSelected, roundObjectId),
+    scanEvents(client, packageId, 'Voted', Voted, (e) => e.round === roundObjectId, false),
+  ])
+  if (!selected) return null
+  return {
+    deadlineMs: Number(selected.deadline_ms),
+    committee: selected.committee,
+    votes: votes.map((v) => ({ voter: v.voter, resultHash: Uint8Array.from(v.result_hash) })),
+  }
 }
 
 /** The `RoundCreated` event of round number `roundId` (its object id, player, bet), or `null`. */

@@ -7,7 +7,7 @@
 .verify-panel .report { display: grid; gap: 10px; }
 .verify-panel .verdict { margin: 0; font-weight: 600; }
 .verify-panel .verdict.verified, .verify-panel .verdict.caught, .verify-panel .verdict.upheld { color: #98c379; }
-.verify-panel .verdict.paidMismatch { color: #e06c75; }
+.verify-panel .verdict.paidMismatch, .verify-panel .verdict.unchallenged { color: #e06c75; }
 .verify-panel .verdict.refunded, .verify-panel .verdict.inProgress { color: #e5c07b; }
 .verify-panel dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
 .verify-panel dt { color: #8a94a6; }
@@ -20,3 +20,4 @@
 .verify-panel .committee .agrees { color: #98c379; }
 .verify-panel .committee .disagrees { color: #e06c75; }
 .verify-panel .committee .waiting { color: #8a94a6; }
+.verify-panel .replay { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }

@@ -45,7 +45,7 @@ describe('App', () => {
   it('draws the board on load', () => {
     const calls = stubCanvas()
     render(<App />)
-    expect(screen.getByText('Play on-chain, or replay a seed, to see a round.')).toBeTruthy()
+    expect(screen.getByText('Play on-chain, or verify a round, to see it on the board.')).toBeTruthy()
     expect(calls.arc).toBeGreaterThan(200) // 203 pins
   })
 
@@ -63,13 +63,13 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Seed'), { target: { value: seed } })
     fireEvent.change(screen.getByLabelText('Round'), { target: { value: '1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Replay seed' }))
-    await waitFor(() => expect(screen.getByText('Round finished.')).toBeTruthy(), {
+    await waitFor(() => expect(screen.getByText('All balls are down.')).toBeTruthy(), {
       timeout: 30_000,
     })
     expect(document.querySelector('.landed')?.textContent).toBe('Landed 100 / 100')
-    const mono = document.querySelectorAll('.round-info .mono')
-    expect(mono[0].textContent).toBe(seed)
+    const values = document.querySelectorAll('.round-info .value')
+    expect(values[0].getAttribute('title')).toBe(seed)
     // docs/SPEC.md §3 golden fixture
-    expect(mono[1].textContent).toBe('06e86fe4ce78394b27ef1d942c164292ce763d94aa54ca20f82ccdb24b818151')
+    expect(values[1].getAttribute('title')).toBe('06e86fe4ce78394b27ef1d942c164292ce763d94aa54ca20f82ccdb24b818151')
   }, 60_000)
 })

@@ -1,24 +1,27 @@
 /**
- * Verify page: anyone checks any round of the deployment from the chain alone. Enter a round
- * number; the page reads the round and its events, replays the seed in this browser, and shows
- * whether what was submitted and what was paid match that replay, plus the challenge history
- * (committee votes, verdict). The round then plays on the board by itself, unless the board is busy
- * with another round (e.g. an on-chain round on the Play view); "Watch again" plays it any time.
- * Link: `#verify/<round>`.
+ * Verify page: look up any round of the deployment on the chain and check it by watching it. Enter a round
+ * number; the page shows what the chain records (seed, submitted and paid result hashes, the challenge
+ * history with committee votes and verdict, payout or refund) and plays the round on the board. When the
+ * balls land, the replay's hash is the check: each hash gets ✓/✗ and the summary verdict appears. If the
+ * board is busy with another round, it waits for a "Replay on the board" click (which would stop that
+ * round). `npm run replay` checks the same round without trusting this website. Link: `#verify/<round>`.
  */
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { ClientWithCoreApi } from '@mysten/sui/client'
 import { toHex } from '@mysten/sui/utils'
 import {
   RoundStatus,
   TESTNET_EXPLORER_ACCOUNT,
   TESTNET_EXPLORER_OBJECT,
+  fromOnchainOutcomes,
   type Deployment,
 } from '@pachinko/chain'
 import { DEFAULT_CONFIG } from '@pachinko/physics'
-import { useVerifyRound, type VerifiedRound } from '../hooks/useVerifyRound'
+import { useVerifyRound, type BoardReplay, type VerifiedRound } from '../hooks/useVerifyRound'
 import { checkRoundId } from '../lib/validation'
 import { paidHash, verdictOf, type Verdict } from '../onchain/verify'
+import { shortHex } from '../lib/hex'
+import { CopyValue, ReplayCommand } from './CopyValue'
 import './VerifyPanel.css'
 
 interface Props {
@@ -28,17 +31,21 @@ interface Props {
   readonly initialRound: bigint | null
   /** Called with each round verified, so the link can follow. */
   readonly onRoundChange: (roundId: bigint) => void
-  /** Plays a round on the board. */
-  readonly onWatch: (seedHex: string, roundId: bigint) => void
-  /** The board is playing another round: don't take it over without a click. */
+  /** Plays a round on the board; resolves with the replay's result hash once the balls land (null if cut short). */
+  readonly playOnBoard: (seedHex: string, roundId: bigint) => Promise<string | null>
+  /** The board is playing a round: don't take it over without a click. */
   readonly boardBusy: boolean
+  /** Passes on the operator's claimed outcomes (shown next to the board's counts). */
+  readonly onClaim: (seedHex: string, roundId: bigint, outcomes: readonly number[]) => void
 }
 
 const VERDICT_TEXT: Record<Verdict, string> = {
-  verified: '✓ Verified: the player was paid from exactly the result your browser computes.',
-  caught: '✓ A forged result was challenged and overturned; the player was paid from the result your browser computes.',
-  upheld: '✓ A challenge failed (the operator was honest); the player was paid from the result your browser computes.',
-  paidMismatch: '✗ The player was paid from a result your browser does NOT compute.',
+  verified: "✓ Verified: the operator's result matches the board, and the player was paid on it.",
+  caught: "✓ The operator's forged result was challenged and overturned; the player was paid on the board's result.",
+  upheld: "✓ A challenge failed (the operator was honest); the player was paid on the board's result.",
+  unchallenged:
+    "✗ The operator's result does not match the board, but nobody challenged it in time, so the player was paid on the wrong result.",
+  paidMismatch: '✗ The player was paid on a result that does NOT match the board, even after a challenge.',
   refunded: 'No result arrived in time, so the bet was refunded.',
   inProgress: 'This round is not settled yet.',
 }
@@ -53,13 +60,12 @@ const STATUS_NAME: Record<RoundStatus, string> = {
 }
 
 const sui = (mist: bigint | string) => `${Number(mist) / 1e9} SUI`
-const short = (hex: string) => `${hex.slice(0, 8)}…${hex.slice(-4)}`
 const hashOf = (bytes: number[]) => toHex(Uint8Array.from(bytes))
 
-export function VerifyPanel({ deployment, client, initialRound, onRoundChange, onWatch, boardBusy }: Props) {
-  const { state, verify } = useVerifyRound(deployment, client)
-  // The verified result the board was last given, so each result plays by itself only once.
-  const played = useRef<VerifiedRound | null>(null)
+export function VerifyPanel({ deployment, client, initialRound, onRoundChange, playOnBoard, boardBusy, onClaim }: Props) {
+  const { state, verify, replayOnBoard, ownReplayPlaying } = useVerifyRound(deployment, client, playOnBoard)
+  // Busy with someone else's round (e.g. an on-chain round from the Play view), not an earlier Verify replay.
+  const boardTaken = boardBusy && !ownReplayPlaying
   const [input, setInput] = useState(initialRound?.toString() ?? '')
   const [inputError, setInputError] = useState<string | null>(null)
 
@@ -68,11 +74,16 @@ export function VerifyPanel({ deployment, client, initialRound, onRoundChange, o
   }, [initialRound, verify])
 
   useEffect(() => {
-    if (state.status !== 'done' || played.current === state.result || boardBusy) return
-    played.current = state.result
-    const { seedHex, round } = state.result
-    if (seedHex) onWatch(seedHex, round.roundId)
-  }, [state, boardBusy, onWatch])
+    if (state.status !== 'done') return
+    const { seedHex, round, history } = state.result
+    if (seedHex && history.submitted) onClaim(seedHex, round.roundId, fromOnchainOutcomes(history.submitted.outcomes))
+  }, [state, onClaim])
+
+  // Each verified round plays on the board by itself (that replay is the check), unless the board is busy.
+  const autoReplay = state.status === 'done' && state.replay === 'none' && state.result.canReplay && !boardTaken
+  useEffect(() => {
+    if (autoReplay) void replayOnBoard()
+  }, [autoReplay, replayOnBoard])
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -96,16 +107,29 @@ export function VerifyPanel({ deployment, client, initialRound, onRoundChange, o
         </button>
       </form>
       {inputError && <p className="error">{inputError}</p>}
-      {state.status === 'idle' && <p className="hint">Check any round from the chain alone: no trust in the operator.</p>}
+      {state.status === 'idle' && <p className="hint">Look up any round on the chain and watch it replay on the board.</p>}
       {state.status === 'loading' && <p className="hint">Reading round #{state.roundId.toString()} from the chain…</p>}
       {state.status === 'error' && <p className="error">{state.error}</p>}
-      {state.status === 'done' && <Report result={state.result} onWatch={onWatch} />}
+      {state.status === 'done' && (
+        <Report
+          result={state.result}
+          replay={state.replay}
+          onReplay={() => void replayOnBoard()}
+          boardBusy={boardTaken}
+        />
+      )}
     </section>
   )
 }
 
-function Report({ result, onWatch }: { result: VerifiedRound; onWatch: Props['onWatch'] }) {
-  const { round, betMist, seedHex, replayHash, history } = result
+interface ReportProps extends Pick<Props, 'boardBusy'> {
+  readonly result: VerifiedRound
+  readonly replay: BoardReplay
+  readonly onReplay: () => void
+}
+
+function Report({ result, replay, onReplay, boardBusy }: ReportProps) {
+  const { round, betMist, seedHex, canReplay, replayHash, history } = result
   const paid = paidHash(history)
   const submitted = history.submitted ? hashOf(history.submitted.result_hash) : null
   const verdict = replayHash ? verdictOf(round.status, history, replayHash) : null
@@ -113,11 +137,7 @@ function Report({ result, onWatch }: { result: VerifiedRound; onWatch: Props['on
   return (
     <div className="report">
       {verdict && <p className={`verdict ${verdict}`}>{VERDICT_TEXT[verdict]}</p>}
-      {!verdict && round.seed && (
-        <p className="hint">
-          This round uses physics {round.configVersion}; this page runs {DEFAULT_CONFIG.version}, so it can't replay it.
-        </p>
-      )}
+      {!verdict && <p className="hint">{waitingText(result, replay, boardBusy)}</p>}
       <dl>
         <dt>Round</dt>
         <dd>
@@ -131,23 +151,23 @@ function Report({ result, onWatch }: { result: VerifiedRound; onWatch: Props['on
         <dt>Player</dt>
         <dd className="mono">
           <a href={`${TESTNET_EXPLORER_ACCOUNT}/${round.player}`} target="_blank" rel="noreferrer">
-            {short(round.player)}
+            {shortHex(round.player)}
           </a>
         </dd>
         <dt>Seed</dt>
-        <dd className="mono" title={seedHex ?? undefined}>{seedHex ? short(seedHex) : 'not drawn yet'}</dd>
+        {seedHex ? <CopyValue label="seed" value={seedHex} /> : <dd>not drawn yet</dd>}
         {replayHash && (
           <>
-            <dt>Your replay</dt>
-            <dd className="mono" title={replayHash}>{short(replayHash)}</dd>
+            <dt>Board</dt>
+            <CopyValue label="board hash" value={replayHash} />
           </>
         )}
-        {submitted && <HashRow label="Submitted" hash={submitted} replayHash={replayHash} />}
-        {paid && <HashRow label="Paid from" hash={paid} replayHash={replayHash} />}
+        {submitted && <HashRow label="Operator submitted" hash={submitted} replayHash={replayHash} />}
+        {paid && <HashRow label="Paid on" hash={paid} replayHash={replayHash} />}
         {history.challenged && (
           <>
             <dt>Challenged by</dt>
-            <dd className="mono">{short(history.challenged.challenger)}</dd>
+            <dd className="mono">{shortHex(history.challenged.challenger)}</dd>
           </>
         )}
         {history.committee && (
@@ -158,11 +178,9 @@ function Report({ result, onWatch }: { result: VerifiedRound; onWatch: Props['on
                 {history.committee.committee.map((member) => {
                   const vote = history.votes.find((v) => v.voter === member)
                   const voteHash = vote ? hashOf(vote.result_hash) : null
-                  const agrees = voteHash !== null && voteHash === replayHash
                   return (
-                    <li key={member} className={vote ? (agrees ? 'agrees' : 'disagrees') : 'waiting'}>
-                      <span className="mono">{short(member)}</span>{' '}
-                      {vote ? (agrees ? 'voted ✓ your replay' : 'voted ✗ another result') : 'no vote'}
+                    <li key={member} className={voteClass(voteHash, replayHash)}>
+                      <span className="mono">{shortHex(member)}</span> {voteText(voteHash, replayHash, submitted)}
                     </li>
                   )
                 })}
@@ -176,7 +194,7 @@ function Report({ result, onWatch }: { result: VerifiedRound; onWatch: Props['on
             <dd>
               {history.resolved.operator_honest ? 'operator honest' : 'operator forged the result'} (
               {history.resolved.by_committee ? 'committee' : 'admin fallback'}); {sui(history.resolved.award)} →{' '}
-              <span className="mono">{short(history.resolved.winner)}</span>
+              <span className="mono">{shortHex(history.resolved.winner)}</span>
             </dd>
           </>
         )}
@@ -193,24 +211,66 @@ function Report({ result, onWatch }: { result: VerifiedRound; onWatch: Props['on
           </>
         )}
       </dl>
+      {(replayHash || submitted || paid) && (
+        <p className="hint">
+          Each hash is a fingerprint (SHA-256) of where the round's 100 balls landed.
+          {replayHash && ' ✓ = same as the board, ✗ = different.'}
+        </p>
+      )}
+      {seedHex && canReplay && (
+        <div className="replay">
+          <button type="button" onClick={onReplay} disabled={replay === 'playing'}>
+            {replay === 'playing' ? 'Replaying…' : 'Replay on the board'}
+          </button>
+          {boardBusy && replay !== 'playing' && (
+            <span className="hint">The board is playing another round: replaying stops it.</span>
+          )}
+        </div>
+      )}
       {seedHex && (
-        <button type="button" onClick={() => onWatch(seedHex, round.roundId)}>
-          Watch again
-        </button>
+        <ReplayCommand intro="Check it without trusting this website:" seedHex={seedHex} roundId={round.roundId} />
       )}
     </div>
   )
 }
 
+/** What the page says while it has no replay hash yet. */
+function waitingText(result: VerifiedRound, replay: BoardReplay, boardBusy: boolean): string {
+  const { round, seedHex, canReplay } = result
+  if (seedHex === null) return 'The seed is not drawn yet, so there is nothing to replay.'
+  if (!canReplay) {
+    return `This round uses physics ${round.configVersion}; this page runs ${DEFAULT_CONFIG.version}, so it can't replay it.`
+  }
+  if (replay === 'playing') return "Replaying the round on the board… the operator's result is checked against it when the balls land."
+  if (replay === 'interrupted') return 'The replay was stopped before the balls landed, so it was not checked.'
+  if (boardBusy) return 'The board is busy with another round. Replay this one on the board to check it.'
+  return 'This is what the chain records.'
+}
+
 function HashRow({ label, hash, replayHash }: { label: string; hash: string; replayHash: string | null }) {
-  const mark = replayHash === null ? '' : hash === replayHash ? ' ✓' : ' ✗'
+  const match = replayHash === null ? null : hash === replayHash
   return (
     <>
       <dt>{label}</dt>
-      <dd className={`mono ${mark === ' ✓' ? 'match' : mark === ' ✗' ? 'mismatch' : ''}`} title={hash}>
-        {short(hash)}
-        {mark}
-      </dd>
+      <CopyValue
+        label={`${label.toLowerCase()} hash`}
+        value={hash}
+        className={match === null ? '' : match ? 'match' : 'mismatch'}
+        mark={match === null ? undefined : match ? '✓' : '✗'}
+      />
     </>
   )
+}
+
+/** How a committee vote reads: against the board once its balls have landed, else against the submitted result. */
+function voteText(voteHash: string | null, replayHash: string | null, submitted: string | null): string {
+  if (voteHash === null) return 'no vote'
+  if (replayHash !== null) return voteHash === replayHash ? 'voted ✓ same as the board' : 'voted ✗ a different result'
+  return voteHash === submitted ? 'voted: the submitted result is right' : 'voted: the submitted result is wrong'
+}
+
+function voteClass(voteHash: string | null, replayHash: string | null): string {
+  if (voteHash === null) return 'waiting'
+  if (replayHash === null) return 'voted'
+  return voteHash === replayHash ? 'agrees' : 'disagrees'
 }

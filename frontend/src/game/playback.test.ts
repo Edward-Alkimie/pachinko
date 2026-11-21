@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { frameIndexAt, tallyAt, tickAt } from './playback'
+import { countOutcomes, frameIndexAt, tallyAt, tickAt } from './playback'
 
 describe('tickAt', () => {
   it('converts elapsed milliseconds to a simulation tick at 120 Hz', () => {
@@ -35,5 +35,12 @@ describe('tallyAt', () => {
     expect(tallyAt(outcomes, landedAtTick, 0, 3)).toEqual({ perPocket: [0, 0, 0], landed: 0 })
     expect(tallyAt(outcomes, landedAtTick, 25, 3)).toEqual({ perPocket: [1, 0, 1], landed: 2 })
     expect(tallyAt(outcomes, landedAtTick, 999, 3)).toEqual({ perPocket: [1, 1, 2], landed: 4 })
+  })
+})
+
+describe('countOutcomes', () => {
+  it('counts balls per pocket and the ones that never landed', () => {
+    expect(countOutcomes([0, 2, 2, -1, 1, -1], 3)).toEqual({ perPocket: [1, 1, 2], never: 2 })
+    expect(countOutcomes(new Array(5).fill(-1), 3)).toEqual({ perPocket: [0, 0, 0], never: 5 })
   })
 })

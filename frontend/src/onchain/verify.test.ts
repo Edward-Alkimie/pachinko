@@ -28,8 +28,13 @@ describe('verdictOf', () => {
     expect(verdictOf(RoundStatus.Finalized, history(REPLAY, { operator_honest: true }), REPLAY)).toBe('upheld')
   })
 
-  it('paidMismatch: the player was paid from a result the replay does not give', () => {
-    expect(verdictOf(RoundStatus.Finalized, history(OTHER), REPLAY)).toBe('paidMismatch')
+  it('unchallenged: paid from a result the replay does not give, and nobody challenged it', () => {
+    expect(verdictOf(RoundStatus.Finalized, history(OTHER), REPLAY)).toBe('unchallenged')
+  })
+
+  it('paidMismatch: paid from a result the replay does not give, even after a challenge', () => {
+    const challenged = { ...history(OTHER, { operator_honest: true }), challenged: {} as RoundHistory['challenged'] }
+    expect(verdictOf(RoundStatus.Finalized, challenged, REPLAY)).toBe('paidMismatch')
   })
 
   it('refunded and in progress', () => {

@@ -9,6 +9,7 @@ import {
   Voted,
   eventType,
   fetchRoundHistory,
+  findCommitteeVotes,
   findRoundByNumber,
   type EventName,
 } from '../src/events'
@@ -82,5 +83,25 @@ describe('fetchRoundHistory', () => {
     expect(history.resolved?.by_committee).toBe(true)
     expect(history.finalized?.payout).toBe('10')
     expect(history.refunded).toBeNull()
+  })
+})
+
+describe('findCommitteeVotes', () => {
+  it('reads the committee and only this round\'s votes back from events', async () => {
+    const client = fakeClient({
+      CommitteeSelected: [
+        CommitteeSelected.serialize({ round: ROUND, round_id: 1, committee: [id('51'), id('52')], deadline_ms: 9 }).toBytes(),
+      ],
+      Voted: [voted(ROUND, id('51')), voted(OTHER, id('53')), voted(ROUND, id('52'))],
+    })
+    const dispute = await findCommitteeVotes(client, PKG, ROUND)
+    expect(dispute?.deadlineMs).toBe(9)
+    expect(dispute?.committee).toEqual([id('51'), id('52')])
+    expect(dispute?.votes.map((v) => v.voter)).toEqual([id('51'), id('52')])
+    expect(dispute?.votes[0].resultHash).toEqual(Uint8Array.from(HASH))
+  })
+
+  it('is null when no committee was drawn', async () => {
+    expect(await findCommitteeVotes(fakeClient({}), PKG, ROUND)).toBeNull()
   })
 })
