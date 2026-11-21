@@ -21,10 +21,12 @@ export {
   VerifierSlashed,
   Voted,
   eventType,
+  fetchRoundHistory,
   findFinalized,
   findResolved,
+  findRoundByNumber,
 } from './events'
-export type { EventName } from './events'
+export type { EventName, RoundHistory } from './events'
 export { readEvent, signAndExecute } from './execute'
 export type { Executed } from './execute'
 export {

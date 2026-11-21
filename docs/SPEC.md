@@ -212,3 +212,6 @@ Everything that talks to the contracts imports this package (scripts, operator, 
 - Server side: `signAndExecute(client, signer, tx)` (throws on abort, waits for indexing), `readEvent`.
   `findFinalized(client, packageId, roundObjectId)` → the round's `Finalized` event (payout), or `null`.
   `findResolved(client, packageId, roundObjectId)` → the round's `Resolved` event (verdict, bond award), or `null`.
+  `findRoundByNumber(client, packageId, roundId)` → the round's `RoundCreated` event (object id, player, bet), or `null`.
+  `fetchRoundHistory(client, packageId, roundObjectId)` → `RoundHistory`: its `ResultSubmitted`, `Challenged`,
+  `CommitteeSelected`, every `Voted`, `Resolved`, `Finalized` and `Refunded` event (`null` / empty = not yet).
