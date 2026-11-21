@@ -22,19 +22,19 @@ describe('settlement', () => {
     })
   })
 
-  it('won challenge: bond out, true payout in, both bonds in', () => {
+  it('won challenge: bond out, true payout in, bond award in', () => {
     const state = {
       phase: 'final' as const,
       payoutMist: 10n,
       challengeDigest: 'TX',
-      resolution: { operatorHonest: false, winner: ME, awardMist: 20n },
+      resolution: { operatorHonest: false, winner: ME, awardMist: 15n, byCommittee: true },
     }
-    expect(settlement(state, ME, BET, BOND)?.netMist).toBe(10n)
+    expect(settlement(state, ME, BET, BOND)?.netMist).toBe(5n)
     expect(settlement(state, ME, BET, BOND)?.lines.map((l) => l.label)).toEqual([
       'Bet',
       'Challenge bond',
       'Payout',
-      'Bonds won',
+      'Bond award',
     ])
   })
 
@@ -43,8 +43,19 @@ describe('settlement', () => {
       phase: 'final' as const,
       payoutMist: 10n,
       challengeDigest: 'TX',
-      resolution: { operatorHonest: true, winner: '0xoperator', awardMist: 20n },
+      resolution: { operatorHonest: true, winner: '0xoperator', awardMist: 15n, byCommittee: true },
     }
     expect(settlement(state, ME, BET, BOND)?.netMist).toBe(-10n)
+  })
+
+  it('refunded: the bet comes back, net zero', () => {
+    const state = { phase: 'refunded' as const, payoutMist: null, challengeDigest: null, resolution: null }
+    expect(settlement(state, ME, BET, BOND)).toEqual({
+      lines: [
+        { label: 'Bet', mist: -10n },
+        { label: 'Refund', mist: 10n },
+      ],
+      netMist: 0n,
+    })
   })
 })

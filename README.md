@@ -65,7 +65,9 @@ Details and troubleshooting: `contracts/pachinko/README.md`.
 3. Terminal 3: `npm run dev` → open `http://<host>/absproxy/5180/`.
 4. Under **On-chain play**, connect a wallet (e.g. Slush, on testnet, with some test SUI) → **Play on-chain**.
 5. Once the balls land, the page compares its replay with the submitted result. While the challenge window is
-   open you can **Challenge** (try it with `OPERATOR_CHEAT=shortchange` in `.env`). The panel ends with your net.
+   open you can **Challenge** (try it with `OPERATOR_CHEAT=shortchange` in `.env`); the panel then shows the
+   committee's votes. It ends with your net. If the operator sends no result within 2 minutes of the seed, the
+   panel offers **refund my bet**.
 
 No browser? `npm run bet:testnet` bets, follows the round in the terminal, and challenges if the result doesn't match its replay.
 

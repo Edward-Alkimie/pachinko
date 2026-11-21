@@ -394,13 +394,14 @@ New events: `CommitteeSelected { round, committee, deadline_ms }`, `Voted { roun
   rounds. Today operator and House are the same party, so it has no reason to; a split operator would need a
   penalty for missing the window.
 
-### 11.5 Off-chain pieces (verifier node and setup built; page next)
+### 11.5 Off-chain pieces (built)
 
 - **Verifier node** (`physics-service`, `npm run verifier`, own `VERIFIER_PRIVATE_KEY`): on `Challenged`,
   calls `select_committee` if nobody has; on `CommitteeSelected` naming its address, runs `runRound` and
   calls `vote`. Same loop shape as the operator and arbiter.
 - **Arbiter** (in `npm run operator`): becomes the fallback only; it waits for the dispute deadline.
-- **Page:** after a challenge, shows the drawn committee and the votes as they arrive, then the verdict.
+- **Page:** after a challenge, shows the drawn committee and each vote against the page's own replay, then the
+  verdict (by the committee or the admin fallback). After a missed submit deadline it offers **refund my bet**.
 - **Demo:** 3 verifier keys funded from the main address (stake + gas each), e.g. `npm run verifiers:setup`
   to create, fund and register them.
 

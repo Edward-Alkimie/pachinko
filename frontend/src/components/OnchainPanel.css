@@ -25,3 +25,8 @@
 .onchain-panel .settlement .net.loss td { color: #e06c75; }
 .onchain-panel button.challenge.secondary { background: none; border-color: #2c3850; color: #e6e9ef; font-weight: normal; }
 .onchain-panel button.challenge.secondary:hover:not(:disabled) { background: #2c3850; border-color: #2c3850; }
+.onchain-panel .committee { display: grid; gap: 4px; }
+.onchain-panel .committee ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 0.85rem; }
+.onchain-panel .committee li.waiting { color: #8a94a6; }
+.onchain-panel .committee li.agrees { color: #98c379; }
+.onchain-panel .committee li.disagrees { color: #e06c75; }

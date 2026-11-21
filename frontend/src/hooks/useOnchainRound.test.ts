@@ -5,12 +5,21 @@ import * as chain from '@pachinko/chain'
 import { RoundCreated, RoundStatus, eventType, type Deployment, type RoundView } from '@pachinko/chain'
 import { DEFAULT_CONFIG } from '@pachinko/physics'
 import type { AppDAppKit } from '../onchain/dappKit'
-import { BET_MIST, phaseFor, replayCheck, stageOf, useOnchainRound } from './useOnchainRound'
+import {
+  BET_MIST,
+  canRefund,
+  committeeVotes,
+  phaseFor,
+  replayCheck,
+  stageOf,
+  useOnchainRound,
+} from './useOnchainRound'
 
 vi.mock('@pachinko/chain', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@pachinko/chain')>()),
   fetchRound: vi.fn(),
   fetchSubmission: vi.fn(),
+  fetchDispute: vi.fn(),
   findFinalized: vi.fn(),
   findResolved: vi.fn(),
 }))
@@ -43,7 +52,7 @@ function submission(hashHex: string): chain.SubmissionView {
   return { deadlineMs: Date.now() + 30_000, resultHash: new Uint8Array(Buffer.from(hashHex, 'hex')) } as chain.SubmissionView
 }
 
-function view(status: RoundStatus): RoundView {
+function view(status: RoundStatus, submitDeadlineMs = 0): RoundView {
   return {
     objectId: ROUND,
     roundId: 5n,
@@ -52,7 +61,7 @@ function view(status: RoundStatus): RoundView {
     seed: status === RoundStatus.BetLocked ? null : SEED,
     betMist: BET_MIST,
     status,
-    submitDeadlineMs: 0,
+    submitDeadlineMs,
   }
 }
 
@@ -69,7 +78,7 @@ function fakeDAppKit(): AppDAppKit {
     signAndExecuteTransaction: vi
       .fn()
       .mockResolvedValueOnce({ Transaction: { digest: 'BET', status: { success: true } } })
-      .mockResolvedValue({ Transaction: { digest: 'CHALLENGE', status: { success: true } } }),
+      .mockResolvedValue({ Transaction: { digest: 'ACTION', status: { success: true } } }),
     getClient: () => ({
       core: {
         waitForTransaction: async () => ({
@@ -125,9 +134,12 @@ describe('useOnchainRound', () => {
     vi.mocked(chain.findFinalized).mockResolvedValue({ payout: '10000000' } as Awaited<
       ReturnType<typeof chain.findFinalized>
     >)
-    vi.mocked(chain.findResolved).mockResolvedValue({ operator_honest: false, winner: PLAYER, award: '20' } as Awaited<
-      ReturnType<typeof chain.findResolved>
-    >)
+    vi.mocked(chain.findResolved).mockResolvedValue({
+      operator_honest: false,
+      winner: PLAYER,
+      award: '15',
+      by_committee: true,
+    } as Awaited<ReturnType<typeof chain.findResolved>>)
     const dAppKit = fakeDAppKit()
 
     const { result } = renderHook(() => useOnchainRound(DEPLOYMENT, dAppKit, async () => HONEST_HASH))
@@ -140,13 +152,13 @@ describe('useOnchainRound', () => {
 
     await act(() => result.current.challenge())
     expect(dAppKit.signAndExecuteTransaction).toHaveBeenCalledTimes(2)
-    expect(result.current.state.challengeDigest).toBe('CHALLENGE')
+    expect(result.current.state.challengeDigest).toBe('ACTION')
 
     await act(() => vi.advanceTimersByTimeAsync(10_000))
     expect(result.current.state).toMatchObject({
       phase: 'final',
       payoutMist: 10_000_000n,
-      resolution: { operatorHonest: false, winner: PLAYER, awardMist: 20n },
+      resolution: { operatorHonest: false, winner: PLAYER, awardMist: 15n, byCommittee: true },
     })
   })
 
@@ -169,9 +181,9 @@ describe('useOnchainRound', () => {
 
     expect(result.current.state).toMatchObject({
       phase: 'verifying',
-      challenging: false,
+      walletAction: null,
       challengeDigest: null,
-      challengeError: 'User rejected',
+      actionError: 'User rejected',
     })
   })
 
@@ -234,6 +246,47 @@ describe('useOnchainRound', () => {
     expect(result.current.state).toMatchObject({ phase: 'final', payoutMist: 0n, error: null })
   })
 
+  it('shows the committee and its votes while the round is challenged', async () => {
+    vi.mocked(chain.fetchRound).mockResolvedValue(view(RoundStatus.Challenged))
+    vi.mocked(chain.fetchDispute).mockResolvedValue({
+      deadlineMs: 90_000,
+      committee: ['0xa', '0xb', '0xc'],
+      votes: [{ voter: '0xa', resultHash: Buffer.from(HONEST_HASH, 'hex') }],
+    })
+
+    const { result } = renderHook(() => useOnchainRound(DEPLOYMENT, fakeDAppKit(), async () => HONEST_HASH))
+    await act(async () => {
+      void result.current.play()
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+
+    const { dispute, replayHash } = result.current.state
+    expect(dispute?.deadlineMs).toBe(90_000)
+    expect(committeeVotes(dispute!, replayHash).map((c) => c.vote)).toEqual(['agrees', 'waiting', 'waiting'])
+  })
+
+  it('lets the player refund the bet when the operator misses the submit deadline', async () => {
+    const deadline = Date.now() + 1_000
+    vi.mocked(chain.fetchRound).mockResolvedValue(view(RoundStatus.Seeded, deadline))
+    const dAppKit = fakeDAppKit()
+
+    const { result } = renderHook(() => useOnchainRound(DEPLOYMENT, dAppKit, async () => HONEST_HASH))
+    await act(async () => {
+      void result.current.play()
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+    expect(result.current.state).toMatchObject({ phase: 'waitingResult', submitDeadlineMs: deadline })
+    expect(canRefund(result.current.state, Date.now())).toBe(true)
+
+    vi.mocked(chain.fetchRound).mockResolvedValue(view(RoundStatus.Refunded, deadline))
+    await act(() => result.current.refund())
+    expect(dAppKit.signAndExecuteTransaction).toHaveBeenCalledTimes(2)
+    expect(result.current.state.refundDigest).toBe('ACTION')
+
+    await act(() => vi.advanceTimersByTimeAsync(2_000))
+    expect(result.current.state.phase).toBe('refunded')
+  })
+
   it('shows the error when the wallet rejects the bet', async () => {
     const dAppKit = fakeDAppKit()
     vi.mocked(dAppKit.signAndExecuteTransaction).mockReset().mockRejectedValue(new Error('User rejected'))
@@ -253,6 +306,35 @@ describe('replayCheck', () => {
     expect(replayCheck({ replay: 'done', replayHash: HONEST_HASH, submittedHash: HONEST_HASH })).toBe('match')
     expect(replayCheck({ replay: 'done', replayHash: HONEST_HASH, submittedHash: FORGED_HASH })).toBe('mismatch')
     expect(replayCheck({ replay: 'interrupted', replayHash: null, submittedHash: HONEST_HASH })).toBe('unavailable')
+  })
+})
+
+describe('canRefund', () => {
+  const seeded = { phase: 'waitingResult' as const, submitDeadlineMs: 1_000, refundDigest: null }
+  it('only once seeded, past the submit deadline, and not refunded yet', () => {
+    expect(canRefund(seeded, 999)).toBe(false)
+    expect(canRefund(seeded, 1_000)).toBe(true)
+    expect(canRefund({ ...seeded, refundDigest: 'TX' }, 1_000)).toBe(false)
+    expect(canRefund({ ...seeded, phase: 'verifying' }, 1_000)).toBe(false)
+    expect(canRefund({ ...seeded, submitDeadlineMs: 0 }, 1_000)).toBe(false)
+  })
+})
+
+describe('committeeVotes', () => {
+  it('compares each drawn verifier vote with the page replay', () => {
+    const dispute = {
+      deadlineMs: 0,
+      committee: ['0xa', '0xb', '0xc'],
+      votes: [
+        { voter: '0xa', resultHash: HONEST_HASH },
+        { voter: '0xc', resultHash: FORGED_HASH },
+      ],
+    }
+    expect(committeeVotes(dispute, HONEST_HASH)).toEqual([
+      { verifier: '0xa', vote: 'agrees' },
+      { verifier: '0xb', vote: 'waiting' },
+      { verifier: '0xc', vote: 'disagrees' },
+    ])
   })
 })
 

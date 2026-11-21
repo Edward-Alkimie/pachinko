@@ -4,11 +4,13 @@
  *   play() → wallet signs create_round (bet locked)          phase 'signing' → 'waitingSeed'
  *          → operator draws the seed                          phase 'waitingResult'
  *            onSeed(seed, round_id) plays it on the board     replay 'playing' → 'done' (with its hash)
+ *            no result by the round's submit deadline → the player may refund()   phase 'refunded'
  *          → operator submits; challenge window runs           phase 'verifying'
  *            the page compares its replay hash with the submitted one (replayCheck);
  *            on a mismatch the player may challenge() with the bond (docs/CONTRACTS.md §1, step 1)
- *          → finalized (after the window, or by the arbiter); payout from Finalized,
- *            verdict from Resolved if the round was challenged   phase 'final'
+ *          → challenged: the committee is drawn and votes      phase 'challenged' (dispute shown)
+ *          → finalized (after the window, by the committee, or by the admin fallback); payout
+ *            from Finalized, verdict from Resolved if the round was challenged   phase 'final'
  *
  * Two clocks run here: `phase` follows the chain, `replay` follows the board. The panel shows
  * `stageOf(state)`, which holds every chain result back while the balls are still falling, so
@@ -18,6 +20,7 @@
  * operator and arbiter (physics-service) do the rest. Failed reads are retried on the next poll.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Transaction } from '@mysten/sui/transactions'
 import { toHex } from '@mysten/sui/utils'
 import {
   RoundCreated,
@@ -25,10 +28,12 @@ import {
   challengeTx,
   createRoundTx,
   eventType,
+  fetchDispute,
   fetchRound,
   fetchSubmission,
   findFinalized,
   findResolved,
+  refundUnsubmittedTx,
   type Deployment,
 } from '@pachinko/chain'
 import { DEFAULT_CONFIG } from '@pachinko/physics'
@@ -59,10 +64,23 @@ export type OnchainStage = OnchainPhase | 'playing'
 /** How a challenge was settled (the round's `Resolved` event). */
 export interface Resolution {
   readonly operatorHonest: boolean
-  /** Who received both bonds. */
+  /** Who received the bond award. */
   readonly winner: string
   readonly awardMist: bigint
+  /** Settled by the committee's votes, or by the admin fallback. */
+  readonly byCommittee: boolean
 }
+
+/** The committee vote on a challenged round. */
+export interface DisputeState {
+  readonly deadlineMs: number
+  /** Drawn verifiers (empty until drawn). */
+  readonly committee: readonly string[]
+  readonly votes: readonly { readonly voter: string; readonly resultHash: string }[]
+}
+
+/** A transaction the player signs during the round. */
+export type WalletAction = 'challenge' | 'refund'
 
 export interface OnchainState {
   readonly phase: OnchainPhase
@@ -78,10 +96,15 @@ export interface OnchainState {
   readonly deadlineMs: number | null
   /** Hash the operator submitted. */
   readonly submittedHash: string | null
-  /** The wallet is signing a challenge. */
-  readonly challenging: boolean
+  /** When the bet becomes refundable if no result was submitted (`0` until seeded). */
+  readonly submitDeadlineMs: number
+  /** The committee vote, while the round is challenged. */
+  readonly dispute: DisputeState | null
+  /** The wallet is signing this action. */
+  readonly walletAction: WalletAction | null
+  readonly actionError: string | null
   readonly challengeDigest: string | null
-  readonly challengeError: string | null
+  readonly refundDigest: string | null
   readonly payoutMist: bigint | null
   /** Set when the round was challenged and settled. */
   readonly resolution: Resolution | null
@@ -98,9 +121,12 @@ const INITIAL: OnchainState = {
   replayHash: null,
   deadlineMs: null,
   submittedHash: null,
-  challenging: false,
+  submitDeadlineMs: 0,
+  dispute: null,
+  walletAction: null,
+  actionError: null,
   challengeDigest: null,
-  challengeError: null,
+  refundDigest: null,
   payoutMist: null,
   resolution: null,
   error: null,
@@ -145,6 +171,29 @@ export function replayCheck(
   return state.replayHash === state.submittedHash ? 'match' : 'mismatch'
 }
 
+/** The player may take the bet back: seeded, no result, and the submit deadline has passed. */
+export function canRefund(
+  state: Pick<OnchainState, 'phase' | 'submitDeadlineMs' | 'refundDigest'>,
+  nowMs: number,
+): boolean {
+  const pastDeadline = state.submitDeadlineMs > 0 && nowMs >= state.submitDeadlineMs
+  return state.phase === 'waitingResult' && pastDeadline && !state.refundDigest
+}
+
+/** Each drawn verifier's vote, compared with the page's own replay. */
+export type CommitteeVote = 'waiting' | 'agrees' | 'disagrees'
+
+export function committeeVotes(
+  dispute: DisputeState,
+  replayHash: string | null,
+): { readonly verifier: string; readonly vote: CommitteeVote }[] {
+  return dispute.committee.map((verifier) => {
+    const vote = dispute.votes.find((v) => v.voter === verifier)
+    if (!vote) return { verifier, vote: 'waiting' }
+    return { verifier, vote: vote.resultHash === replayHash ? 'agrees' : 'disagrees' }
+  })
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function useOnchainRound(
@@ -186,6 +235,13 @@ export function useOnchainRound(
       }
 
       const phase = phaseFor(round.status)
+      const submitDeadlineMs = round.submitDeadlineMs
+      if (phase === 'challenged') {
+        const d = await fetchDispute(client, deployment, objectId)
+        const votes = d.votes.map((v) => ({ voter: v.voter, resultHash: toHex(v.resultHash) }))
+        setState((s) => ({ ...s, phase, dispute: { deadlineMs: d.deadlineMs, committee: d.committee, votes } }))
+        return { settled: false, seedPlayed }
+      }
       if (phase === 'verifying') {
         const submission = await fetchSubmission(client, deployment, objectId)
         const submittedHash = toHex(submission.resultHash)
@@ -201,12 +257,17 @@ export function useOnchainRound(
         // The status can be read a moment before the event is indexed: try again next poll.
         if (!finalized) return { settled: false, seedPlayed }
         const resolution = resolved
-          ? { operatorHonest: resolved.operator_honest, winner: resolved.winner, awardMist: BigInt(resolved.award) }
+          ? {
+              operatorHonest: resolved.operator_honest,
+              winner: resolved.winner,
+              awardMist: BigInt(resolved.award),
+              byCommittee: resolved.by_committee,
+            }
           : null
         setState((s) => ({ ...s, phase, payoutMist: BigInt(finalized.payout), resolution }))
         return { settled: true, seedPlayed }
       }
-      setState((s) => ({ ...s, phase }))
+      setState((s) => ({ ...s, phase, submitDeadlineMs }))
       return { settled: phase === 'refunded', seedPlayed }
     },
     [dAppKit, deployment, playSeed],
@@ -270,24 +331,35 @@ export function useOnchainRound(
     playSeed(state.seedHex, state.roundId, runId.current)
   }, [playSeed, state.seedHex, state.roundId])
 
+  /** Signs a player action for this round; the follow loop then sees its effect on-chain. */
+  const sign = useCallback(
+    async (action: WalletAction, transaction: Transaction) => {
+      setState((s) => ({ ...s, walletAction: action, actionError: null }))
+      try {
+        const result = await dAppKit.signAndExecuteTransaction({ transaction })
+        const tx = result.Transaction ?? result.FailedTransaction
+        if (!tx.status.success) throw new Error(`${action} failed: ${JSON.stringify(tx.status.error)}`)
+        const digest = action === 'challenge' ? { challengeDigest: tx.digest } : { refundDigest: tx.digest }
+        setState((s) => ({ ...s, walletAction: null, ...digest }))
+      } catch (err) {
+        console.error(`useOnchainRound: ${action}`, err)
+        setState((s) => ({ ...s, walletAction: null, actionError: err instanceof Error ? err.message : String(err) }))
+      }
+    },
+    [dAppKit],
+  )
+
   /** Disputes the submitted result with the challenger bond (the player decides; only inside the window). */
   const challenge = useCallback(async () => {
-    const objectId = state.roundObjectId
-    if (!objectId) return
-    setState((s) => ({ ...s, challenging: true, challengeError: null }))
-    try {
-      const result = await dAppKit.signAndExecuteTransaction({ transaction: challengeTx(deployment, objectId) })
-      const tx = result.Transaction ?? result.FailedTransaction
-      if (!tx.status.success) throw new Error(`challenge failed: ${JSON.stringify(tx.status.error)}`)
-      setState((s) => ({ ...s, challenging: false, challengeDigest: tx.digest }))
-    } catch (err) {
-      console.error('useOnchainRound: challenge', err)
-      const challengeError = err instanceof Error ? err.message : String(err)
-      setState((s) => ({ ...s, challenging: false, challengeError }))
-    }
-  }, [dAppKit, deployment, state.roundObjectId])
+    if (state.roundObjectId) await sign('challenge', challengeTx(deployment, state.roundObjectId))
+  }, [deployment, sign, state.roundObjectId])
 
-  return { state, play, challenge, replayAgain }
+  /** Takes the bet back when the operator missed the round's submit deadline. */
+  const refund = useCallback(async () => {
+    if (state.roundObjectId) await sign('refund', refundUnsubmittedTx(deployment, state.roundObjectId))
+  }, [deployment, sign, state.roundObjectId])
+
+  return { state, play, challenge, refund, replayAgain }
 }
 
 /** An error that retrying won't fix (e.g. the round needs another physics version). */
