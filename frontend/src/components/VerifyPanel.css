@@ -1,0 +1,22 @@
+.verify-panel { display: grid; gap: 10px; background: #18202e; border-radius: 8px; padding: 16px; font-size: 0.9rem; }
+.verify-panel form { display: flex; gap: 8px; align-items: end; }
+.verify-panel label { display: grid; gap: 4px; flex: 1; color: #8a94a6; }
+.verify-panel input { font: inherit; padding: 8px; border-radius: 6px; border: 1px solid #3a4558; background: #0b0f17; color: #e6e9ef; }
+.verify-panel .hint { margin: 0; color: #8a94a6; }
+.verify-panel .error { margin: 0; color: #e06c75; }
+.verify-panel .report { display: grid; gap: 10px; }
+.verify-panel .verdict { margin: 0; font-weight: 600; }
+.verify-panel .verdict.verified, .verify-panel .verdict.caught, .verify-panel .verdict.upheld { color: #98c379; }
+.verify-panel .verdict.paidMismatch { color: #e06c75; }
+.verify-panel .verdict.refunded, .verify-panel .verdict.inProgress { color: #e5c07b; }
+.verify-panel dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.verify-panel dt { color: #8a94a6; }
+.verify-panel dd { margin: 0; overflow-wrap: anywhere; }
+.verify-panel .mono { font-family: ui-monospace, monospace; }
+.verify-panel .match { color: #98c379; }
+.verify-panel .mismatch { color: #e06c75; }
+.verify-panel a { color: #88c0d0; }
+.verify-panel .committee { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.verify-panel .committee .agrees { color: #98c379; }
+.verify-panel .committee .disagrees { color: #e06c75; }
+.verify-panel .committee .waiting { color: #8a94a6; }

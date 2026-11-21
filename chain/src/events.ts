@@ -102,10 +102,32 @@ export function eventType(packageId: string, name: EventName): string {
 }
 
 /**
- * The first event of type `name` about one round, or `null` if there is none yet.
+ * Events of type `name` that `matches` accepts, oldest first; only the first one if `firstOnly`.
  * Scans the package's events of that type oldest-first: descending scans run into the node's
  * pruned history. Fine for testnet volumes; an indexer would replace this later.
  */
+async function scanEvents<T>(
+  client: ClientWithCoreApi,
+  packageId: string,
+  name: EventName,
+  layout: { parse(bytes: Uint8Array): T },
+  matches: (event: T) => boolean,
+  firstOnly: boolean,
+): Promise<T[]> {
+  const found: T[] = []
+  let after: string | null = null
+  for (;;) {
+    const page = await client.core.listEvents({ filter: { eventType: eventType(packageId, name) }, after })
+    for (const event of page.events.map((e) => layout.parse(e.bcs)).filter(matches)) {
+      found.push(event)
+      if (firstOnly) return found
+    }
+    if (!page.hasNextPage) return found
+    after = page.endCursor
+  }
+}
+
+/** The first event of type `name` about one round, or `null` if there is none yet. */
 async function findRoundEvent<T extends { round: string }>(
   client: ClientWithCoreApi,
   packageId: string,
@@ -113,14 +135,8 @@ async function findRoundEvent<T extends { round: string }>(
   layout: { parse(bytes: Uint8Array): T },
   roundObjectId: string,
 ): Promise<T | null> {
-  let after: string | null = null
-  for (;;) {
-    const page = await client.core.listEvents({ filter: { eventType: eventType(packageId, name) }, after })
-    const match = page.events.map((e) => layout.parse(e.bcs)).find((event) => event.round === roundObjectId)
-    if (match) return match
-    if (!page.hasNextPage) return null
-    after = page.endCursor
-  }
+  const [event] = await scanEvents(client, packageId, name, layout, (e) => e.round === roundObjectId, true)
+  return event ?? null
 }
 
 /** The round's `Finalized` event (its payout), or `null` while the round isn't final. */
@@ -131,4 +147,46 @@ export function findFinalized(client: ClientWithCoreApi, packageId: string, roun
 /** The round's `Resolved` event (verdict, bond award), or `null` if it was never challenged and settled. */
 export function findResolved(client: ClientWithCoreApi, packageId: string, roundObjectId: string) {
   return findRoundEvent(client, packageId, 'Resolved', Resolved, roundObjectId)
+}
+
+/** The `RoundCreated` event of round number `roundId` (its object id, player, bet), or `null`. */
+export async function findRoundByNumber(
+  client: ClientWithCoreApi,
+  packageId: string,
+  roundId: bigint,
+): Promise<typeof RoundCreated.$inferType | null> {
+  const isRound = (e: typeof RoundCreated.$inferType) => BigInt(e.round_id) === roundId
+  const [event] = await scanEvents(client, packageId, 'RoundCreated', RoundCreated, isRound, true)
+  return event ?? null
+}
+
+/** Everything that happened to one round after the bet, from its events (`null` / empty = not yet). */
+export interface RoundHistory {
+  readonly submitted: typeof ResultSubmitted.$inferType | null
+  readonly challenged: typeof Challenged.$inferType | null
+  readonly committee: typeof CommitteeSelected.$inferType | null
+  /** In the order they were cast. */
+  readonly votes: (typeof Voted.$inferType)[]
+  readonly resolved: typeof Resolved.$inferType | null
+  readonly finalized: typeof Finalized.$inferType | null
+  readonly refunded: typeof Refunded.$inferType | null
+}
+
+/** Reads a round's history from its events (one scan per event type, in parallel). */
+export async function fetchRoundHistory(
+  client: ClientWithCoreApi,
+  packageId: string,
+  roundObjectId: string,
+): Promise<RoundHistory> {
+  const ofRound = (e: { round: string }) => e.round === roundObjectId
+  const [submitted, challenged, committee, votes, resolved, finalized, refunded] = await Promise.all([
+    findRoundEvent(client, packageId, 'ResultSubmitted', ResultSubmitted, roundObjectId),
+    findRoundEvent(client, packageId, 'Challenged', Challenged, roundObjectId),
+    findRoundEvent(client, packageId, 'CommitteeSelected', CommitteeSelected, roundObjectId),
+    scanEvents(client, packageId, 'Voted', Voted, ofRound, false),
+    findRoundEvent(client, packageId, 'Resolved', Resolved, roundObjectId),
+    findRoundEvent(client, packageId, 'Finalized', Finalized, roundObjectId),
+    findRoundEvent(client, packageId, 'Refunded', Refunded, roundObjectId),
+  ])
+  return { submitted, challenged, committee, votes, resolved, finalized, refunded }
 }

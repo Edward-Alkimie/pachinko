@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Page-level test: replay a seed, let the (fast-forwarded) round play out,
+ * Page-level test: replay a seed from the Verify view, let the (fast-forwarded) round play out,
  * and check the board is drawn and the results appear.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -55,9 +55,10 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Log in' })).toBeTruthy()
   })
 
-  it('replays the SPEC golden seed to the golden hash', async () => {
+  it('replays the SPEC golden seed to the golden hash (Verify view, Replay form)', async () => {
     stubCanvas()
     render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
     const seed = '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f'
     fireEvent.change(screen.getByLabelText('Seed'), { target: { value: seed } })
     fireEvent.change(screen.getByLabelText('Round'), { target: { value: '1' } })

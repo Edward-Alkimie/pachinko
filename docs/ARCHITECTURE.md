@@ -237,7 +237,7 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 
 | Function / component | File | Does | Status |
 |---|---|---|---|
-| `App` | App.tsx | AuthPanel, OnchainPanel (on-chain play), replay form, board, results; derives balls + tally from {result, tick} | ✅ |
+| `App` | App.tsx | Play / Verify views over one board (both stay mounted; `#verify/<round>` opens Verify). Play: AuthPanel, OnchainPanel. Verify: VerifyPanel + the replay form ("Advanced: replay any seed"). Results under both; derives balls + tally from {result, tick} | ✅ |
 | `PachinkoCanvas` | game/PachinkoCanvas.tsx | canvas element, DPR, calls drawBoard + drawBalls each frame | ✅ |
 | `drawBoard` / `boardPixelSize` | game/drawBoard.ts | paints the static board | ✅ |
 | `drawBalls` | game/drawBoard.ts | paints the balls of one frame on top | ✅ |
@@ -256,6 +256,9 @@ loop, one transaction at a time, so they never compete for the key's gas coin.
 | `useOnchainRound` / `phaseFor` | hooks/useOnchainRound.ts | play(): wallet signs `createRoundTx` → poll `fetchRound` (failed reads retried; keeps `submitDeadlineMs`) → `onSeed` once the seed is on-chain (replay playing → done / interrupted) → `fetchSubmission` (deadline, hash) → `fetchDispute` while challenged → `findFinalized` + `findResolved` (payout, verdict); `challenge()` / `refund()` sign `challengeTx` / `refundUnsubmittedTx`; `replayAgain()`; phases idle → signing → waitingSeed → waitingResult → verifying → challenged → final / refunded / error | ✅ |
 | `stageOf` / `replayCheck` / `canRefund` / `committeeVotes` | hooks/useOnchainRound.ts | (pure) what the panel shows: `playing` while the board animates, else the chain phase; replay vs submitted → match / mismatch / unavailable; refund allowed (seeded, past the submit deadline); each drawn verifier's vote vs the replay → waiting / agrees / disagrees | ✅ |
 | `settlement` | onchain/settlement.ts | (pure) finished round → the wallet's lines (bet, challenge bond, payout, bond award; or bet + refund) and net | ✅ |
+| `VerifyPanel` | components/VerifyPanel.tsx | Verify page: round number → summary verdict, round / player / bet / seed, your replay vs submitted and paid hashes, challenger, committee votes vs your replay, verdict, payout or refund; then plays the round on the board by itself (unless the board is busy with another round), **Watch again** any time | ✅ |
+| `useVerifyRound` | hooks/useVerifyRound.ts | verify(n): `findRoundByNumber` → `fetchRound` + `fetchRoundHistory` → replay the seed with `runRound` in the browser | ✅ |
+| `verdictOf` / `paidHash` / `parseRoute` / `routeHash` | onchain/verify.ts | (pure) round status + history + replay → verified / caught / upheld / paidMismatch / refunded / inProgress; the `#verify/<round>` route | ✅ |
 | `ONCHAIN` / `selectDeployment` | onchain/deployment.ts | `VITE_PACHINKO_DEPLOYMENT` → that `chain/src/deployments/*.json` (Vite glob), or off + reason | ✅ |
 | `getDAppKit` | onchain/dappKit.ts | dApp Kit instance for testnet (gRPC client, Slush web wallet), created on first use | ✅ |
 
@@ -332,6 +335,7 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
 | `signAndExecute` / `readEvent` | execute.ts | keypair + tx → executed tx (throws on abort, waits for indexing); decode one event | scripts, operator | ✅ |
 | `findFinalized` / `findResolved` | events.ts | round object id → its `Finalized` event (payout) / `Resolved` event (verdict, bond award), or `null` (ascending scan) | scripts, frontend | ✅ |
+| `findRoundByNumber` / `fetchRoundHistory` | events.ts | round number → its `RoundCreated`; round object id → `RoundHistory` (submitted, challenged, committee, votes, resolved, finalized, refunded) from its events | Verify page | ✅ |
 
 ### `scripts/` (testnet tooling)
 
