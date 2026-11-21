@@ -311,14 +311,14 @@ Design + state machine: `docs/CONTRACTS.md`. Shared interface: `docs/SPEC.md` §
 | event layouts + `eventType` | events.ts | BCS event schemas, `0xpkg::module::Name` | scripts, operator | ✅ |
 | `toOnchainOutcomes` / `fromOnchainOutcomes` | outcomes.ts | `-1` ↔ `0xFFFF` | transactions, objects | ✅ |
 | `signAndExecute` / `readEvent` | execute.ts | keypair + tx → executed tx (throws on abort, waits for indexing); decode one event | scripts, operator | ✅ |
-| `findFinalized` | events.ts | round object id → its `Finalized` event (payout) or `null` (ascending scan) | scripts, (next) frontend | ✅ |
+| `findFinalized` / `findResolved` | events.ts | round object id → its `Finalized` event (payout) / `Resolved` event (verdict, bond award), or `null` (ascending scan) | scripts, frontend | ✅ |
 
 ### `scripts/` (testnet tooling)
 
 | Function | File | Does | Status |
 |---|---|---|---|
 | `main` | src/deploy.ts | `npm run deploy:testnet`: `deploy`, saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` | ✅ |
-| `main` | src/bet.ts | `npm run bet:testnet`: player side only (create round, follow status, print payout); needs a running operator | ✅ |
+| `main` / `checkResult` | src/bet.ts | `npm run bet:testnet`: player side only (create round, follow status); at SUBMITTED replays the seed, compares hashes, challenges on a mismatch; prints verdict + payout; needs a running operator | ✅ |
 | `main` | src/onchainRound.ts | `npm run round:testnet`: honest round (Flow F) on the saved deployment, prints every digest | ✅ |
 | `main` / `forgedJackpot` | src/forgedRound.ts | `npm run forged:testnet`: operator forges a jackpot (matching hash) → `challenge` → `resolveByAdmin` with true outcomes | ✅ |
 | `deploy` / `createRound` / `drawSeed` / `seededRound` / `submitResult` / `challenge` / `resolveByAdmin` / `finalize` / `waitForDeadline` | src/steps.ts | one function per on-chain step: signs a `@pachinko/chain` transaction, prints the digest, decodes the event (`deploy` = publish + create + fund house) | ✅ |

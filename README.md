@@ -60,7 +60,7 @@ Details and troubleshooting: `contracts/pachinko/README.md`.
 2. Terminal 2: `npm run dev` → open `http://<host>/absproxy/5180/`.
 3. Under **On-chain play**, connect a wallet (e.g. Slush, on testnet, with some test SUI) → **Play on-chain**.
 
-No browser? `npm run bet:testnet` bets and follows the round in the terminal.
+No browser? `npm run bet:testnet` bets, follows the round in the terminal, and challenges if the result doesn't match its replay.
 
 ### Backend
 
@@ -84,7 +84,7 @@ The API runs at `http://127.0.0.1:8000`. Stop it with `Ctrl+C`.
 | `npm run deploy:testnet` | Publish your contracts + House → `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
 | `npm run operator` | Operator: draws seeds, runs physics, submits, finalizes. Also the arbiter: settles challenged rounds |
 | `npm run operator` with `OPERATOR_CHEAT=shortchange` in `.env` | Demo: the operator forges every result (player paid nothing), so a challenge can catch it |
-| `npm run bet:testnet` | Player side only: bet, then follow the round (needs the operator) |
+| `npm run bet:testnet` | Player side only: bet, follow the round, replay it and challenge on a mismatch (needs the operator) |
 | `npm run round:testnet` | One full round from a script, playing both sides |
 | `npm run forged:testnet` | Same, but the operator forges a jackpot and a challenge catches it |
 

@@ -160,7 +160,7 @@ Setup and running a round: root `README.md`. Build, test, keys and troubleshooti
 | File | Does |
 |---|---|
 | `src/deploy.ts` | `npm run deploy:testnet`: `deploy`, then saves `chain/src/deployments/<PACHINKO_DEPLOYMENT>.json` |
-| `src/bet.ts` | `npm run bet:testnet`: player side only: `createRound`, then follow the round's status until FINALIZED and print the payout. Needs `npm run operator` running |
+| `src/bet.ts` | `npm run bet:testnet`: player side only: `createRound`, then follow the round's status until FINALIZED. At SUBMITTED it replays the seed and compares hashes (§1 step 1); on a mismatch it challenges. Prints the verdict (if challenged) and the payout. Needs `npm run operator` running |
 | `src/onchainRound.ts` | `npm run round:testnet`: honest round on the saved deployment. `seededRound` → `submitResult` → wait until `deadline_ms` + 3 s → `finalize` |
 | `src/forgedRound.ts` | `npm run forged:testnet`: `seededRound` → operator submits a forged jackpot (every ball in the best pocket, with the matching hash) → `challenge` (optional second key) → `resolveByAdmin` with the true outcomes |
 | `src/steps.ts` | one function per on-chain step (signs a `@pachinko/chain` transaction): `deploy` (publish → create house → fund house) · `createRound` · `drawSeed` · `seededRound` (those three + `runRound`) · `submitResult` · `challenge` · `resolveByAdmin` · `finalize` · `waitForDeadline` |
@@ -270,3 +270,11 @@ On deployment `kiana`, with `npm run operator` running, the browser wallet `0x53
 `be6542ca…388a` on the board and showed hash `d34c7a9d…0c8c` and the payout (0.01 SUI, flat 1×), matching
 the on-chain `Round` and `Submission`.
 
+### Testnet run: player catches a shortchange (2026-11-21)
+
+Deployment `kiana`, `npm run operator` with `OPERATOR_CHEAT=shortchange` (arbiter on), and `npm run bet:testnet`
+as the player. Round 10: bet (`9DR2e4ZA…`), seed (`C5g1nyBX…`), forged submit with every ball "never landed"
+(`HeyYskGm…`). The player's replay hash `5fc1093c…` did not match the submitted `0b7523a4…`, so it challenged
+3 s later (`GgGqT5vr…`). The arbiter re-ran the round and resolved it (`2x33LDw2…`): operator forged, both bonds
+(0.02 SUI) to the challenger, and the player was paid from the true outcomes (0.01 SUI, not the forged 0).
+The same run in honest mode (round 11) matched (`3deef717…`) and finalized after the window (`DvKtGAnk…`).

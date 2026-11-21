@@ -16,6 +16,7 @@ export {
   SeedDrawn,
   eventType,
   findFinalized,
+  findResolved,
 } from './events'
 export type { EventName } from './events'
 export { readEvent, signAndExecute } from './execute'

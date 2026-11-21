@@ -175,3 +175,4 @@ Everything that talks to the contracts imports this package (scripts, operator, 
 - Outcomes: `toOnchainOutcomes` / `fromOnchainOutcomes` (`-1` ↔ `0xFFFF`).
 - Server side: `signAndExecute(client, signer, tx)` (throws on abort, waits for indexing), `readEvent`.
   `findFinalized(client, packageId, roundObjectId)` → the round's `Finalized` event (payout), or `null`.
+  `findResolved(client, packageId, roundObjectId)` → the round's `Resolved` event (verdict, bond award), or `null`.
