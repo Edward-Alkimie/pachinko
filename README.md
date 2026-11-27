@@ -41,30 +41,75 @@ cp .env.example .env
 
 ### 2. Backend
 
+Needs Python 3.12. Create a virtual environment in `backend/.venv` and install the packages:
+
 ```bash
-~/.local/bin/uv venv --python 3.12 backend/.venv
-~/.local/bin/uv pip install --python backend/.venv -r backend/requirements.txt
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -r backend/requirements.txt -r backend/requirements-dev.txt
 ```
 
-Set `DJANGO_SECRET_KEY` in `.env` to a long random string.
+`requirements.txt` is what the app needs to run; `requirements-dev.txt` adds development tools
+(`coverage`). A server only needs the first. With [uv](https://docs.astral.sh/uv/) instead:
+`uv venv --python 3.12 backend/.venv && uv pip install --python backend/.venv -r backend/requirements.txt -r backend/requirements-dev.txt`.
+
+In `.env`, set `DJANGO_SECRET_KEY` (required, Django won't start without it):
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(50))"   # paste the output as DJANGO_SECRET_KEY
+```
+
+Then create the database tables:
+
+```bash
+cd backend
+set -a && . ../.env && set +a      # load .env
+.venv/bin/python manage.py migrate
+cd ..
+```
+
+The database is SQLite (`backend/db.sqlite3`) while `POSTGRES_HOST` is unset in `.env`. To use PostgreSQL
+instead, run `docker compose --env-file .env up -d`, set `POSTGRES_HOST=localhost`, and run `migrate` again.
+
+Optional: `.venv/bin/python manage.py createsuperuser` (from `backend/`) for the admin site at `/admin/`.
 
 ### 3. Sui testnet
 
 Each teammate has their own deployment (contracts + House), picked by name in `.env`.
 Details and troubleshooting: `contracts/pachinko/README.md`.
 
-1. `sui client active-address`, switch to testnet, and get test SUI from the faucet (about 0.2 SUI is enough).
-2. `sui keytool export --key-identity <your address>` → copy the `suiprivkey1…` value.
-3. Add to `.env`:
+1. **Install the Sui CLI.** The deploy compiles the contracts with `sui move build`, so the CLI must be on
+   your `PATH`. With the official installer, [suiup](https://github.com/MystenLabs/suiup):
+   ```bash
+   curl -sSfL https://raw.githubusercontent.com/MystenLabs/suiup/main/install.sh | sh
+   suiup install sui@testnet
+   sui --version          # not found? open a new terminal or add ~/.local/bin to PATH
+   ```
+2. **Create a testnet address and fund it** (about 0.2 SUI is enough):
+   ```bash
+   sui client                  # first run: choose testnet and an ed25519 key
+   sui client active-address   # wrong network? sui client switch --env testnet
+   sui client faucet           # or paste the address at https://faucet.sui.io
+   sui client balance
+   ```
+3. **Export the key:** `sui keytool export --key-identity <your address>` → copy the `suiprivkey1…` value.
+   This only reads your local keystore; never share or commit the value.
+4. **Add to `.env`** (the name is lowercase letters, digits and dashes):
    ```bash
    SUI_PRIVATE_KEY=suiprivkey1...
    PACHINKO_DEPLOYMENT=<name>        # e.g. kevin
    VITE_PACHINKO_DEPLOYMENT=<name>   # e.g. kevin
    ```
-4. `npm run deploy:testnet` → writes `chain/src/deployments/<name>.json`. Commit it (public ids only).
-5. Committee (optional, to settle challenges by vote): create 3 more keys (`sui client new-address ed25519`,
+5. **Test the contracts (optional):** `(cd contracts/pachinko && sui move test --lint)`.
+6. **Deploy:** `npm run deploy:testnet` (needs `npm install` from step 1). It publishes the package, creates and
+   funds your House, and writes `chain/src/deployments/<name>.json`. Commit that file (public ids only).
+   The deploying key holds the deployment's `AdminCap` and `OperatorCap`.
+7. **Committee (optional, to settle challenges by vote):** create 3 more keys (`sui client new-address ed25519`,
    then `sui keytool export --key-identity <address>`), add `VERIFIER_PRIVATE_KEYS=key1,key2,key3` to `.env`,
    and run `npm run verifiers:setup` (funds them from your main key and registers them in the pool).
+
+After any contract change, run `npm run deploy:testnet` again: it replaces your deployment file, and the new
+House starts with an empty verifier pool, so run `npm run verifiers:setup` again too.
+Then play a round: see [Run → Play a round on testnet](#play-a-round-on-testnet).
 
 ## Run
 
